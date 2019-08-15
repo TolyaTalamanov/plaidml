@@ -131,6 +131,18 @@ void Emit::Visit(const sem::LookupLVal& n) { emit(n.name); }
 
 void Emit::Visit(const sem::SubscriptLVal& n) {
   if (in_write_statement) {
+    if (!use_global_id) {
+      int stride = GetLocalIndexStride(n.offset);
+      if (stride > 1) {
+        n.ptr->Accept(*this);
+        emit(", ");
+        n.offset->Accept(*this);
+        emit(", ");
+        emit("element_offset_");
+        emit(std::to_string(stride));
+        return;
+      }
+    }
     n.ptr->Accept(*this);
     emit(", sizeof(");
     emitType(write_type);
@@ -818,7 +830,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
   }
 
   if (n.type.array) {
-    if (n.type.array >= 160) {
+    if (n.type.array >= 128) {
       large_sparse_vactor.insert(n.name);
       emitVector(ty, std::to_string(n.type.array), n.name);
       // throw std::runtime_error("cm vector exceeds maximum supported size");
