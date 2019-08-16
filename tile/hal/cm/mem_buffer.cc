@@ -20,8 +20,6 @@ CMMemBuffer::CMMemBuffer(std::shared_ptr<cmDeviceState> device_state, std::uint6
     : cmBuffer{size}, device_state_{device_state}, pCmBuffer_{pCmBuffer}, base_{base} {}
 
 CMMemBuffer::~CMMemBuffer() {
-  // std::cout << "(DBG) CMMemBuffer::~CMMemBuffer() pCmBuffer_=" << pCmBuffer_
-  // << std::endl;
   if (pCmBuffer_) {
     cm_result_check(device_state_->cmdev()->DestroyBufferUP(pCmBuffer_));
   }
@@ -35,33 +33,31 @@ void CMMemBuffer::ReleaseDeviceBuffer() {
 
 void CMMemBuffer::SetKernelArg(CmKernel* kernel, std::size_t index) {
   if (pCmBuffer_ == nullptr) {
-    // std::cout << "(DBG) CMMemBuffer::SetKernelArg CreateBufferUP " <<
-    // std::endl;
     cm_result_check(device_state_->cmdev()->CreateBufferUP(this->size(), base_, pCmBuffer_));
   }
-  // std::cout << "(DBG) CMMemBuffer::SetKernelArg pCmBuffer_=" << pCmBuffer_ <<
-  // std::endl;
   SurfaceIndex* BUFFER;
   pCmBuffer_->GetIndex(BUFFER);
   kernel->SetKernelArg(index, sizeof(SurfaceIndex), BUFFER);
 }
 
 boost::future<void*> CMMemBuffer::MapCurrent(const std::vector<std::shared_ptr<hal::Event>>& deps) {
-  // std::cout << "(DBG) CMMemBuffer::MapCurrent pCmBuffer_=" << pCmBuffer_ <<
-  // std::endl;
+  if (pCmBuffer_) {
+    cm_result_check(device_state_->cmdev()->DestroyBufferUP(pCmBuffer_));
+  }
   return boost::make_ready_future(base_);
 }
 
 boost::future<void*> CMMemBuffer::MapDiscard(const std::vector<std::shared_ptr<hal::Event>>& deps) {
-  // std::cout << "(DBG) CMMemBuffer::MapDiscard pCmBuffer_=" << pCmBuffer_ <<
-  // std::endl;
+  if (pCmBuffer_) {
+    cm_result_check(device_state_->cmdev()->DestroyBufferUP(pCmBuffer_));
+  }
   return boost::make_ready_future(base_);
 }
 
 std::shared_ptr<hal::Event> CMMemBuffer::Unmap(const context::Context& ctx) {
-  // std::cout << "(DBG) CMMemBuffer::Unmap pCmBuffer_=" << pCmBuffer_ <<
-  // std::endl;
-
+  if (pCmBuffer_) {
+    cm_result_check(device_state_->cmdev()->DestroyBufferUP(pCmBuffer_));
+  }
   context::Activity activity{ctx, "tile::hal::cm::Buffer::Unmap"};
   CmEvent* e;
   return std::make_shared<cmEvent>(activity.ctx(), device_state_, std::move(e), device_state_->cm_queue_);

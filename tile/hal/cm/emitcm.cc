@@ -538,6 +538,7 @@ void Emit::Visit(const sem::StoreStmt& n) {
     if (use_global_id) {
       SingleElementWrite(n.lhs, n.rhs);
     } else {
+      assign_global_var_to_temp(n.rhs);
       emitTab();
       emit("_write(");
       in_write_statement = true;
@@ -1268,6 +1269,17 @@ std::map<std::shared_ptr<sem::LoadExpr>, std::string> Emit::GetGlobalLoadExprMap
     auto s = GetGlobalVarWithOffset(is_load_expr->inner);
     if (s.length() > 0) {
       result[is_load_expr] = s;
+    }
+  }
+
+  auto is_call_expr = std::dynamic_pointer_cast<sem::CallExpr>(p);
+  if (is_call_expr) {
+    for (size_t i = 0; i < is_call_expr->vals.size(); i++) {
+      auto r = GetGlobalLoadExprMap(is_call_expr->vals[i]);
+      result.insert(r.begin(), r.end());
+      emit("//");
+      emit(std::to_string(r.size()));
+      emit("\n");
     }
   }
 

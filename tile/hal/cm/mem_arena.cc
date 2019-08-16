@@ -23,9 +23,7 @@ std::shared_ptr<hal::Buffer> CMMemArena::MakeBuffer(std::uint64_t offset, std::u
   void* base = CM_ALIGNED_MALLOC(size, 0x1000);
   memset(base, 0, size);
 
-  CmBufferUP* pCmBuffer;
-  cm_result_check(device_state_->cmdev()->CreateBufferUP(size, base, pCmBuffer));
-
+  CmBufferUP* pCmBuffer = nullptr;
   return std::make_shared<CMMemBuffer>(device_state_, size, pCmBuffer, base);
 }
 

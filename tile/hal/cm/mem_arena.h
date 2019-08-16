@@ -15,7 +15,6 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-// An Arena implemented using a cl_mem object.
 class CMMemArena final : public hal::Arena {
  public:
   CMMemArena(std::shared_ptr<cmDeviceState> device_state, std::uint64_t size);
