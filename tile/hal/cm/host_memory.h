@@ -19,8 +19,6 @@ class cmHostMemory final : public Memory {
  public:
   explicit cmHostMemory(std::shared_ptr<cmDeviceState> device_state);
 
-  ~cmHostMemory();
-
   std::uint64_t size_goal() const final {
     // TODO: Actually query the system physical memory size.
     return 16 * std::giga::num;
