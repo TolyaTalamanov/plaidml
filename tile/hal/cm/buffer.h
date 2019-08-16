@@ -13,14 +13,10 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-// Represents a chunk of cm memory.
-class cmBuffer : public hal::Buffer {
+class Buffer : public hal::Buffer {
  public:
-  // Casts a hal::Buffer to a Buffer, throwing an exception if the supplied
-  // hal::Buffer isn't an cm buffer, or if
-  // it's a buffer for a different context.
-  static std::shared_ptr<cmBuffer> Downcast(const std::shared_ptr<hal::Buffer>& buffer);
-  static cmBuffer* Downcast(hal::Buffer* buffer);
+  static std::shared_ptr<Buffer> Downcast(const std::shared_ptr<hal::Buffer>& buffer);
+  static Buffer* Downcast(hal::Buffer* buffer);
 
   virtual void SetKernelArg(CmKernel* kernel, std::size_t index) = 0;
 
@@ -31,7 +27,7 @@ class cmBuffer : public hal::Buffer {
   std::uint64_t size() const { return size_; }
 
  protected:
-  explicit cmBuffer(std::uint64_t size);
+  explicit Buffer(std::uint64_t size);
 
  private:
   const std::uint64_t size_;

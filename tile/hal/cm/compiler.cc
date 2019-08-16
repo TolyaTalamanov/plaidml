@@ -35,47 +35,44 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-int cmCompiler::knum = 1;
+struct BuildState;
 
-struct cmBuildState;
+Compiler::Compiler(std::shared_ptr<DeviceState> device_state) : device_state_{device_state} {}
 
-cmCompiler::cmCompiler(std::shared_ptr<cmDeviceState> device_state) : device_state_{device_state} {}
-
-class cm_Build {
+class Build {
  public:
-  cm_Build(context::Activity activity, std::shared_ptr<cmDeviceState> device_state,
-           const std::map<std::string, CmProgram*>& program,
-           const std::map<std::string, std::shared_ptr<Emit>>& emit_map,
-           const std::vector<lang::KernelInfo>& kernel_info, std::vector<context::proto::ActivityID> kernel_ids);
+  Build(context::Activity activity, std::shared_ptr<DeviceState> device_state,
+        const std::map<std::string, CmProgram*>& program, const std::map<std::string, std::shared_ptr<Emit>>& emit_map,
+        const std::vector<lang::KernelInfo>& kernel_info, std::vector<context::proto::ActivityID> kernel_ids);
 
   boost::future<std::unique_ptr<hal::Library>> Start();
-  std::unique_ptr<cmLibrary>& library() { return library_; }
-  std::shared_ptr<cmDeviceState> device_state() { return device_state_; }
+  std::unique_ptr<Library>& library() { return library_; }
+  std::shared_ptr<DeviceState> device_state() { return device_state_; }
 
  private:
   void OnError(const std::string& current);
   context::Activity activity_;
-  std::shared_ptr<cmDeviceState> device_state_;
-  std::unique_ptr<cmLibrary> library_;
+  std::shared_ptr<DeviceState> device_state_;
+  std::unique_ptr<Library> library_;
   boost::promise<std::unique_ptr<hal::Library>> prom_;
 };
 
-struct cmBuildState {
-  cmBuildState(cm_Build* b, const std::string& c) : build(b), current(c) {}
-  cm_Build* build;
+struct BuildState {
+  BuildState(Build* b, const std::string& c) : build(b), current(c) {}
+  Build* build;
   std::string current;
 };
 
-cm_Build::cm_Build(context::Activity activity, std::shared_ptr<cmDeviceState> device_state,
-                   const std::map<std::string, CmProgram*>& program_map,
-                   const std::map<std::string, std::shared_ptr<Emit>>& emit_map,
-                   const std::vector<lang::KernelInfo>& kernel_info, std::vector<context::proto::ActivityID> kernel_ids)
+Build::Build(context::Activity activity, std::shared_ptr<DeviceState> device_state,
+             const std::map<std::string, CmProgram*>& program_map,
+             const std::map<std::string, std::shared_ptr<Emit>>& emit_map,
+             const std::vector<lang::KernelInfo>& kernel_info, std::vector<context::proto::ActivityID> kernel_ids)
     : activity_{std::move(activity)},
       device_state_{device_state},
-      library_{std::make_unique<cmLibrary>(device_state, std::move(program_map), emit_map, kernel_info,
-                                           std::move(kernel_ids))} {}
+      library_{std::make_unique<Library>(device_state, std::move(program_map), emit_map, kernel_info,
+                                         std::move(kernel_ids))} {}
 
-boost::future<std::unique_ptr<hal::Library>> cm_Build::Start() {
+boost::future<std::unique_ptr<hal::Library>> Build::Start() {
   auto result = prom_.get_future();
   prom_.set_value(std::move(library_));
   return result;
@@ -326,21 +323,21 @@ _GENX_ vector<T,N> merge(float f, vector<T,N> v2, vector<ushort,N> v3)
 
 )***";                       // NOLINT
 
-boost::future<std::unique_ptr<hal::Library>> cmCompiler::Build(const context::Context& ctx,
-                                                               const std::vector<lang::KernelInfo>& kernel_info,
-                                                               const hal::proto::HardwareSettings& settings) {
+int Compiler::knum = 1;
+
+boost::future<std::unique_ptr<hal::Library>> Compiler::Build(const context::Context& ctx,
+                                                             const std::vector<lang::KernelInfo>& kernel_info,
+                                                             const hal::proto::HardwareSettings& settings) {
   std::vector<context::proto::ActivityID> kernel_ids;
   std::ostringstream header;
 
   if (!kernel_info.size()) {
-    return boost::make_ready_future(std::unique_ptr<hal::Library>{std::make_unique<cmLibrary>(
+    return boost::make_ready_future(std::unique_ptr<hal::Library>{std::make_unique<Library>(
         device_state_, std::map<std::string, CmProgram*>{}, std::map<std::string, std::shared_ptr<Emit>>{}, kernel_info,
         std::vector<context::proto::ActivityID>{})});
   }
 
   context::Activity activity{ctx, "tile::hal::cm::Build"};
-  bool cl_khr_fp16 = false;
-  bool cl_khr_fp64 = false;
 
   auto env_cache = env::Get("PLAIDML_CM_CACHE");
   fs::path cache_dir;
@@ -363,9 +360,9 @@ boost::future<std::unique_ptr<hal::Library>> cmCompiler::Build(const context::Co
       kinfo.set_src("// Builtin zero kernel");
     } else if (!knames.count(ki.kfunc->name)) {
       knames.insert(ki.kfunc->name);
-      OptimizeKernel(ki, cl_khr_fp16, settings);
+      OptimizeKernel(ki, settings);
 
-      auto pcm = std::make_shared<Emit>(cl_khr_fp16, cl_khr_fp64, ki);
+      auto pcm = std::make_shared<Emit>(ki);
 
       if (ki.comments.find("= ident") != std::string::npos) {
         pcm->comments_contains_ident = true;
@@ -379,10 +376,9 @@ boost::future<std::unique_ptr<hal::Library>> cmCompiler::Build(const context::Co
         kname = kname + "_" + std::to_string(this->knum);
         this->knum++;
       }
+
       fs::path src_path = (cache_dir / kname).replace_extension("cpp");
-
       WriteFile(src_path, src);
-
       fs::path isa_path = (cache_dir / kname).replace_extension("isa");
 
       CmDevice* pCmDev = device_state_->cmdev();
@@ -390,7 +386,6 @@ boost::future<std::unique_ptr<hal::Library>> cmCompiler::Build(const context::Co
       std::string cmd = "";
 
       auto cmc_path = env::Get("PLAIDML_CM_COMPILER_PATH");
-      // Linux shell example: export PLAIDML_CM_COMPILER_PATH=/home/yangleiz/Desktop/MDF_internal/compiler/bin/cmc
       if (cmc_path.length()) {
         cmd = cmc_path + " ";
       } else {
@@ -423,9 +418,9 @@ boost::future<std::unique_ptr<hal::Library>> cmCompiler::Build(const context::Co
     kernel_ids.emplace_back(kbuild.ctx().activity_id());
   }
 
-  cm::cm_Build cm_Build(std::move(activity), device_state_, std::move(program_map), emit_map, kernel_info,
-                        std::move(kernel_ids));
-  return cm_Build.Start();
+  cm::Build Build(std::move(activity), device_state_, std::move(program_map), emit_map, kernel_info,
+                  std::move(kernel_ids));
+  return Build.Start();
 }
 
 }  // namespace cm

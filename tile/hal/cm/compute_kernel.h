@@ -19,22 +19,20 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-class cmComputeKernel final : public Kernel {
+class ComputeKernel final : public Kernel {
  public:
-  cmComputeKernel(std::shared_ptr<cmDeviceState> device_state, CmKernel* kernel, const lang::KernelInfo& info,
-                  context::proto::ActivityID kernel_id, const std::shared_ptr<Emit>& cm);
+  ComputeKernel(std::shared_ptr<DeviceState> device_state, CmKernel* kernel, const lang::KernelInfo& info,
+                context::proto::ActivityID kernel_id, const std::shared_ptr<Emit>& cm);
 
-  ~cmComputeKernel();
+  ~ComputeKernel();
 
   std::shared_ptr<hal::Event> Run(const context::Context& ctx, const std::vector<std::shared_ptr<hal::Buffer>>& params,
                                   const std::vector<std::shared_ptr<hal::Event>>& dependencies,
                                   bool enable_profiling) final;
 
-  static int count;
-
  private:
   std::mutex mu_;
-  std::shared_ptr<cmDeviceState> device_state_;
+  std::shared_ptr<DeviceState> device_state_;
   CmKernel* kernel_;
   CmTask* pKernelArray_;
   CmThreadGroupSpace* pts_;

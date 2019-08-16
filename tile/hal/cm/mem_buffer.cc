@@ -15,15 +15,11 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-CMMemBuffer::CMMemBuffer(std::shared_ptr<cmDeviceState> device_state, std::uint64_t size, CmBufferUP* pCmBuffer,
+CMMemBuffer::CMMemBuffer(std::shared_ptr<DeviceState> device_state, std::uint64_t size, CmBufferUP* pCmBuffer,
                          void* base)
-    : cmBuffer{size}, device_state_{device_state}, pCmBuffer_{pCmBuffer}, base_{base} {}
+    : Buffer{size}, device_state_{device_state}, pCmBuffer_{pCmBuffer}, base_{base} {}
 
-CMMemBuffer::~CMMemBuffer() {
-  if (pCmBuffer_) {
-    cm_result_check(device_state_->cmdev()->DestroyBufferUP(pCmBuffer_));
-  }
-}
+CMMemBuffer::~CMMemBuffer() { ReleaseDeviceBuffer(); }
 
 void CMMemBuffer::ReleaseDeviceBuffer() {
   if (pCmBuffer_) {
@@ -41,26 +37,20 @@ void CMMemBuffer::SetKernelArg(CmKernel* kernel, std::size_t index) {
 }
 
 boost::future<void*> CMMemBuffer::MapCurrent(const std::vector<std::shared_ptr<hal::Event>>& deps) {
-  if (pCmBuffer_) {
-    cm_result_check(device_state_->cmdev()->DestroyBufferUP(pCmBuffer_));
-  }
+  ReleaseDeviceBuffer();
   return boost::make_ready_future(base_);
 }
 
 boost::future<void*> CMMemBuffer::MapDiscard(const std::vector<std::shared_ptr<hal::Event>>& deps) {
-  if (pCmBuffer_) {
-    cm_result_check(device_state_->cmdev()->DestroyBufferUP(pCmBuffer_));
-  }
+  ReleaseDeviceBuffer();
   return boost::make_ready_future(base_);
 }
 
 std::shared_ptr<hal::Event> CMMemBuffer::Unmap(const context::Context& ctx) {
-  if (pCmBuffer_) {
-    cm_result_check(device_state_->cmdev()->DestroyBufferUP(pCmBuffer_));
-  }
+  ReleaseDeviceBuffer();
   context::Activity activity{ctx, "tile::hal::cm::Buffer::Unmap"};
   CmEvent* e;
-  return std::make_shared<cmEvent>(activity.ctx(), device_state_, std::move(e), device_state_->cm_queue_);
+  return std::make_shared<Event>(activity.ctx(), device_state_, std::move(e), device_state_->cm_queue_);
 }
 
 }  // namespace cm

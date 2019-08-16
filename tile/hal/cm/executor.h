@@ -13,9 +13,9 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-class cmExecutor : public hal::Executor {
+class Executor : public hal::Executor {
  public:
-  explicit cmExecutor(std::shared_ptr<cmDeviceState> device_state);
+  explicit Executor(std::shared_ptr<DeviceState> device_state);
 
   const hal::proto::HardwareInfo& info() final { return info_; }
 
@@ -40,7 +40,7 @@ class cmExecutor : public hal::Executor {
  private:
   void InitSharedMemory();
 
-  std::shared_ptr<cmDeviceState> device_state_;
+  std::shared_ptr<DeviceState> device_state_;
   const hal::proto::HardwareInfo info_;
   std::unique_ptr<Memory> device_memory_;
   std::unique_ptr<Memory> shared_memory_;

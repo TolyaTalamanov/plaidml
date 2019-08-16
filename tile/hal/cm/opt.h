@@ -10,7 +10,7 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-void OptimizeKernel(const lang::KernelInfo& ki, bool cl_khr_fp16, const hal::proto::HardwareSettings& settings);
+void OptimizeKernel(const lang::KernelInfo& ki, const hal::proto::HardwareSettings& settings);
 
 }  // namespace cm
 }  // namespace hal

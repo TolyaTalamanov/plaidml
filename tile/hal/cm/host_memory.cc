@@ -13,9 +13,9 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-cmHostMemory::cmHostMemory(std::shared_ptr<cmDeviceState> device_state) : device_state_{std::move(device_state)} {}
+HostMemory::HostMemory(std::shared_ptr<DeviceState> device_state) : device_state_{std::move(device_state)} {}
 
-std::shared_ptr<hal::Buffer> cmHostMemory::MakeBuffer(std::uint64_t size, BufferAccessMask /* access */) {
+std::shared_ptr<hal::Buffer> HostMemory::MakeBuffer(std::uint64_t size, BufferAccessMask /* access */) {
   uint64_t buf_alignment_overflow_size = 3 * sizeof(float);
   size = (size >= 16) ? size : 16;
   size += buf_alignment_overflow_size;
@@ -27,7 +27,7 @@ std::shared_ptr<hal::Buffer> cmHostMemory::MakeBuffer(std::uint64_t size, Buffer
   return std::make_shared<CMMemBuffer>(device_state_, size, pCmBuffer, void_buf_);
 }
 
-std::shared_ptr<hal::Arena> cmHostMemory::MakeArena(std::uint64_t size, BufferAccessMask /* access */) {
+std::shared_ptr<hal::Arena> HostMemory::MakeArena(std::uint64_t size, BufferAccessMask /* access */) {
   return std::make_shared<CMMemArena>(device_state_, size);
 }
 

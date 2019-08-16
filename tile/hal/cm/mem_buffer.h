@@ -16,9 +16,9 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-class CMMemBuffer final : public cmBuffer, public std::enable_shared_from_this<CMMemBuffer> {
+class CMMemBuffer final : public Buffer, public std::enable_shared_from_this<CMMemBuffer> {
  public:
-  CMMemBuffer(std::shared_ptr<cmDeviceState> device_state, std::uint64_t size, CmBufferUP* pCmBuffer, void* base);
+  CMMemBuffer(std::shared_ptr<DeviceState> device_state, std::uint64_t size, CmBufferUP* pCmBuffer, void* base);
 
   ~CMMemBuffer();
 
@@ -35,9 +35,9 @@ class CMMemBuffer final : public cmBuffer, public std::enable_shared_from_this<C
   void ReleaseDeviceBuffer();
 
  private:
-  static CmBufferUP* MakeMem(std::shared_ptr<cmDeviceState> device_state, std::uint64_t size);
+  static CmBufferUP* MakeMem(std::shared_ptr<DeviceState> device_state, std::uint64_t size);
 
-  std::shared_ptr<cmDeviceState> device_state_;
+  std::shared_ptr<DeviceState> device_state_;
   CmBufferUP* pCmBuffer_;
   std::vector<CmBufferUP*> new_buf_vec;
   void* base_;

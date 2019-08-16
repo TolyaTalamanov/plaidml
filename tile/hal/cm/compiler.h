@@ -13,17 +13,18 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-class cmCompiler final : public hal::Compiler {
+class Compiler final : public hal::Compiler {
  public:
-  explicit cmCompiler(std::shared_ptr<cmDeviceState> device_state);
+  explicit Compiler(std::shared_ptr<DeviceState> device_state);
 
   boost::future<std::unique_ptr<hal::Library>> Build(const context::Context& ctx,
                                                      const std::vector<lang::KernelInfo>& kernels,
                                                      const hal::proto::HardwareSettings& settings) final;
+
   static int knum;
 
  private:
-  std::shared_ptr<cmDeviceState> device_state_;
+  std::shared_ptr<DeviceState> device_state_;
 };
 
 }  // namespace cm

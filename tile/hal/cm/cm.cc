@@ -12,8 +12,8 @@ namespace cm {
 
 [[gnu::unused]] char reg = []() -> char {
   FactoryRegistrar<hal::Driver>::Instance()->Register(
-      "cm",                                                                         //
-      [](const context::Context& ctx) { return std::make_unique<cmDriver>(ctx); },  //
+      "cm",                                                                       //
+      [](const context::Context& ctx) { return std::make_unique<Driver>(ctx); },  //
 #ifdef __APPLE__
       FactoryPriority::DEFAULT);
 #else

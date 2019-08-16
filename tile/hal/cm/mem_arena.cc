@@ -12,7 +12,7 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-CMMemArena::CMMemArena(std::shared_ptr<cmDeviceState> device_state, std::uint64_t size)
+CMMemArena::CMMemArena(std::shared_ptr<DeviceState> device_state, std::uint64_t size)
     : device_state_{device_state}, size_{size} {}
 
 std::shared_ptr<hal::Buffer> CMMemArena::MakeBuffer(std::uint64_t offset, std::uint64_t size) {

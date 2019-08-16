@@ -37,94 +37,6 @@ static std::map<std::string, std::string> FuncNameMap = {
     {"floor", "_FLOOR"}, {"ceil", "_CEIL"}, {"exp", "_EXP"}, {"log", "_LOG"},   {"sqrt", "_SQRT"},
     {"pow", "_POW"},     {"sin", "_SIN"},   {"cos", "_COS"}, {"tanh", "_TANH"}, {"round", "_ROUND"}};
 
-std::string Emit::to_string(const sem::LValPtr& v) {
-  // TODO move this function to semtree
-  auto lookup_lval = std::dynamic_pointer_cast<sem::LookupLVal>(v);
-  if (lookup_lval) return to_string(*lookup_lval.get());
-  auto subscript_lval = std::dynamic_pointer_cast<sem::SubscriptLVal>(v);
-  if (subscript_lval) return to_string(*subscript_lval.get());
-  throw std::runtime_error("Not Supported LValPtr");
-}
-
-std::string Emit::to_string(const sem::ExprPtr& e) {
-  // TODO move this function to semtree
-  auto int_const = std::dynamic_pointer_cast<sem::IntConst>(e);
-  if (int_const) return to_string(*int_const.get());
-  auto unary_expr = std::dynamic_pointer_cast<sem::UnaryExpr>(e);
-  if (unary_expr) return to_string(*unary_expr.get());
-  auto binary_expr = std::dynamic_pointer_cast<sem::BinaryExpr>(e);
-  if (binary_expr) return to_string(*binary_expr.get());
-  auto cond_expr = std::dynamic_pointer_cast<sem::CondExpr>(e);
-  if (cond_expr) return to_string(*cond_expr.get());
-  auto select_expr = std::dynamic_pointer_cast<sem::SelectExpr>(e);
-  if (select_expr) return to_string(*select_expr.get());
-  auto clamp_expr = std::dynamic_pointer_cast<sem::ClampExpr>(e);
-  if (clamp_expr) return to_string(*clamp_expr.get());
-  auto cast_expr = std::dynamic_pointer_cast<sem::CastExpr>(e);
-  if (cast_expr) return to_string(*cast_expr.get());
-  auto limit_const = std::dynamic_pointer_cast<sem::LimitConst>(e);
-  if (limit_const) return to_string(*limit_const.get());
-  auto load_expr = std::dynamic_pointer_cast<sem::LoadExpr>(e);
-  if (load_expr) return to_string(*load_expr.get());
-  auto index_expr = std::dynamic_pointer_cast<sem::IndexExpr>(e);
-  if (index_expr) return to_string(*index_expr.get());
-  throw std::runtime_error("Not Supported ExprPtr");
-}
-
-std::string Emit::to_string(const sem::IntConst& n) { return std::to_string(n.value); }
-std::string Emit::to_string(const sem::LookupLVal& n) { return n.name; }
-std::string Emit::to_string(const sem::SubscriptLVal& n) {
-  return "(" + to_string(n.ptr) + " " + to_string(n.offset) + ")";
-}
-std::string Emit::to_string(const sem::LoadExpr& n) { return to_string(n.inner); }
-std::string Emit::to_string(const sem::UnaryExpr& n) { return "(" + n.op + " " + to_string(n.inner) + ")"; }
-std::string Emit::to_string(const sem::BinaryExpr& n) { return "(" + to_string(n.lhs) + " " + to_string(n.rhs) + ")"; }
-std::string Emit::to_string(const sem::CondExpr& n) {
-  return "(" + to_string(n.tcase) + " " + to_string(n.fcase) + " " + to_string(n.cond) + ")";
-}
-std::string Emit::to_string(const sem::SelectExpr& n) {
-  return "(" + to_string(n.tcase) + " " + to_string(n.fcase) + " " + to_string(n.cond) + ")";
-}
-std::string Emit::to_string(const sem::ClampExpr& n) {
-  return "(" + to_string(n.val) + " " + to_string(n.min) + " " + to_string(n.max) + ")";
-}
-std::string Emit::to_string(const sem::CastExpr& n) { return to_string(n.val); }
-std::string Emit::to_string(const sem::LimitConst& n) {
-  if (n.which == sem::LimitConst::ZERO) {
-    return "0";
-  } else if (n.which == sem::LimitConst::ONE) {
-    return "1";
-  }
-  auto it = LimitConstLookup.find(std::make_pair(n.type, n.which));
-  if (it == LimitConstLookup.end()) {
-    throw std::runtime_error("Invalid type in LimitConst");
-  }
-  return it->second;
-}
-std::string Emit::to_string(const sem::IndexExpr& n) {
-  switch (n.type) {
-    case sem::IndexExpr::GLOBAL:
-      if (one_thread_mode) {
-        return "_i" + std::to_string(n.dim);
-      }
-      return "(cm_local_size(" + std::to_string(n.dim) + ")" + " * cm_group_id(" + std::to_string(n.dim) + ")" +
-             " + cm_local_id(" + std::to_string(n.dim) + "))";
-    case sem::IndexExpr::GROUP:
-      return "cm_group_id(" + std::to_string(n.dim) + ")";
-    case sem::IndexExpr::LOCAL:
-      if (one_thread_mode) {
-        return "_i" + std::to_string(n.dim);
-      }
-      if (use_global_id) {
-        return "cm_local_id(" + std::to_string(n.dim) + ")";
-      } else {
-        return vector_size + " * cm_local_id(" + std::to_string(n.dim) + ")";
-      }
-    default:
-      throw std::runtime_error("Invalid IndexExpr type");
-  }
-}
-
 void Emit::Visit(const sem::IntConst& n) { emit(std::to_string(n.value)); }
 
 void Emit::Visit(const sem::LookupLVal& n) { emit(n.name); }
@@ -595,7 +507,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
   }
 
   if (ty.base == sem::Type::VALUE) {
-    if (ty.dtype == DataType::FLOAT16 && !cl_khr_fp16_) {
+    if (ty.dtype == DataType::FLOAT16) {
       // ty.dtype = DataType::FLOAT32;
     } else if (ty.dtype == DataType::BOOLEAN) {
       if (n.init) {
@@ -1149,9 +1061,6 @@ void Emit::Visit(const sem::Function& n) {
 }
 
 void Emit::CheckValidType(const sem::Type& ty) {
-  if (cl_khr_fp64_) {
-    return;
-  }
   if (ty.base == sem::Type::TVOID || ty.base == sem::Type::INDEX) {
     return;
   }
@@ -1160,11 +1069,9 @@ void Emit::CheckValidType(const sem::Type& ty) {
   }
 }
 
-sem::Type Emit::TypeOf(const sem::ExprPtr& expr) { return lang::ExprType::TypeOf(scope_, cl_khr_fp16_, true, expr); }
+sem::Type Emit::TypeOf(const sem::ExprPtr& expr) { return lang::ExprType::TypeOf(scope_, false, true, expr); }
 
-sem::Type Emit::TypeOf(const sem::LValPtr& lvalue) {
-  return lang::ExprType::TypeOf(scope_, cl_khr_fp16_, true, lvalue);
-}
+sem::Type Emit::TypeOf(const sem::LValPtr& lvalue) { return lang::ExprType::TypeOf(scope_, false, true, lvalue); }
 
 // type is sem::Type
 void Emit::emitVector(const sem::Type& type, const std::string& size, const std::string& name) {
@@ -1400,6 +1307,93 @@ int Emit::GetLocalIndexStride(const sem::ExprPtr p) {
     return GetLocalIndexStride(is_load_expr->inner);
   }
   return 0;
+}
+
+// TODO move all these to_string functions to semtree
+std::string Emit::to_string(const sem::LValPtr& v) {
+  auto lookup_lval = std::dynamic_pointer_cast<sem::LookupLVal>(v);
+  if (lookup_lval) return to_string(*lookup_lval.get());
+  auto subscript_lval = std::dynamic_pointer_cast<sem::SubscriptLVal>(v);
+  if (subscript_lval) return to_string(*subscript_lval.get());
+  throw std::runtime_error("Not Supported LValPtr");
+}
+
+std::string Emit::to_string(const sem::ExprPtr& e) {
+  auto int_const = std::dynamic_pointer_cast<sem::IntConst>(e);
+  if (int_const) return to_string(*int_const.get());
+  auto unary_expr = std::dynamic_pointer_cast<sem::UnaryExpr>(e);
+  if (unary_expr) return to_string(*unary_expr.get());
+  auto binary_expr = std::dynamic_pointer_cast<sem::BinaryExpr>(e);
+  if (binary_expr) return to_string(*binary_expr.get());
+  auto cond_expr = std::dynamic_pointer_cast<sem::CondExpr>(e);
+  if (cond_expr) return to_string(*cond_expr.get());
+  auto select_expr = std::dynamic_pointer_cast<sem::SelectExpr>(e);
+  if (select_expr) return to_string(*select_expr.get());
+  auto clamp_expr = std::dynamic_pointer_cast<sem::ClampExpr>(e);
+  if (clamp_expr) return to_string(*clamp_expr.get());
+  auto cast_expr = std::dynamic_pointer_cast<sem::CastExpr>(e);
+  if (cast_expr) return to_string(*cast_expr.get());
+  auto limit_const = std::dynamic_pointer_cast<sem::LimitConst>(e);
+  if (limit_const) return to_string(*limit_const.get());
+  auto load_expr = std::dynamic_pointer_cast<sem::LoadExpr>(e);
+  if (load_expr) return to_string(*load_expr.get());
+  auto index_expr = std::dynamic_pointer_cast<sem::IndexExpr>(e);
+  if (index_expr) return to_string(*index_expr.get());
+  throw std::runtime_error("Not Supported ExprPtr");
+}
+
+std::string Emit::to_string(const sem::IntConst& n) { return std::to_string(n.value); }
+std::string Emit::to_string(const sem::LookupLVal& n) { return n.name; }
+std::string Emit::to_string(const sem::SubscriptLVal& n) {
+  return "(" + to_string(n.ptr) + " " + to_string(n.offset) + ")";
+}
+std::string Emit::to_string(const sem::LoadExpr& n) { return to_string(n.inner); }
+std::string Emit::to_string(const sem::UnaryExpr& n) { return "(" + n.op + " " + to_string(n.inner) + ")"; }
+std::string Emit::to_string(const sem::BinaryExpr& n) { return "(" + to_string(n.lhs) + " " + to_string(n.rhs) + ")"; }
+std::string Emit::to_string(const sem::CondExpr& n) {
+  return "(" + to_string(n.tcase) + " " + to_string(n.fcase) + " " + to_string(n.cond) + ")";
+}
+std::string Emit::to_string(const sem::SelectExpr& n) {
+  return "(" + to_string(n.tcase) + " " + to_string(n.fcase) + " " + to_string(n.cond) + ")";
+}
+std::string Emit::to_string(const sem::ClampExpr& n) {
+  return "(" + to_string(n.val) + " " + to_string(n.min) + " " + to_string(n.max) + ")";
+}
+std::string Emit::to_string(const sem::CastExpr& n) { return to_string(n.val); }
+std::string Emit::to_string(const sem::LimitConst& n) {
+  if (n.which == sem::LimitConst::ZERO) {
+    return "0";
+  } else if (n.which == sem::LimitConst::ONE) {
+    return "1";
+  }
+  auto it = LimitConstLookup.find(std::make_pair(n.type, n.which));
+  if (it == LimitConstLookup.end()) {
+    throw std::runtime_error("Invalid type in LimitConst");
+  }
+  return it->second;
+}
+std::string Emit::to_string(const sem::IndexExpr& n) {
+  switch (n.type) {
+    case sem::IndexExpr::GLOBAL:
+      if (one_thread_mode) {
+        return "_i" + std::to_string(n.dim);
+      }
+      return "(cm_local_size(" + std::to_string(n.dim) + ")" + " * cm_group_id(" + std::to_string(n.dim) + ")" +
+             " + cm_local_id(" + std::to_string(n.dim) + "))";
+    case sem::IndexExpr::GROUP:
+      return "cm_group_id(" + std::to_string(n.dim) + ")";
+    case sem::IndexExpr::LOCAL:
+      if (one_thread_mode) {
+        return "_i" + std::to_string(n.dim);
+      }
+      if (use_global_id) {
+        return "cm_local_id(" + std::to_string(n.dim) + ")";
+      } else {
+        return vector_size + " * cm_local_id(" + std::to_string(n.dim) + ")";
+      }
+    default:
+      throw std::runtime_error("Invalid IndexExpr type");
+  }
 }
 
 }  // namespace cm

@@ -13,13 +13,13 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-std::shared_ptr<cmEvent> cmEvent::Downcast(const std::shared_ptr<hal::Event>& event) {
-  std::shared_ptr<cmEvent> evt = std::dynamic_pointer_cast<cmEvent>(event);
+std::shared_ptr<Event> Event::Downcast(const std::shared_ptr<hal::Event>& event) {
+  std::shared_ptr<Event> evt = std::dynamic_pointer_cast<Event>(event);
   return evt;
 }
 
-std::vector<CmEvent*> cmEvent::Downcast(const std::vector<std::shared_ptr<hal::Event>>& events,
-                                        const std::unique_ptr<cmDeviceState::cmQueueStruct>& queue) {
+std::vector<CmEvent*> Event::Downcast(const std::vector<std::shared_ptr<hal::Event>>& events,
+                                      const std::unique_ptr<DeviceState::QueueStruct>& queue) {
   std::vector<CmEvent*> result;
   for (const auto& event : events) {
     auto evt = Downcast(event);
@@ -33,12 +33,12 @@ std::vector<CmEvent*> cmEvent::Downcast(const std::vector<std::shared_ptr<hal::E
   return result;
 }
 
-boost::future<std::vector<std::shared_ptr<hal::Result>>> cmEvent::WaitFor(
-    const std::vector<std::shared_ptr<hal::Event>>& events, std::shared_ptr<cmDeviceState> device_state) {
+boost::future<std::vector<std::shared_ptr<hal::Result>>> Event::WaitFor(
+    const std::vector<std::shared_ptr<hal::Event>>& events, std::shared_ptr<DeviceState> device_state) {
   std::vector<CmEvent*> mdeps;
-  std::vector<std::shared_ptr<cmEvent>> hal_events;
+  std::vector<std::shared_ptr<Event>> hal_events;
   for (const auto& event : events) {
-    std::shared_ptr<cmEvent> evt = Downcast(event);
+    std::shared_ptr<Event> evt = Downcast(event);
     if (evt->cm_event_) {
       mdeps.emplace_back(evt->cm_event_);
       hal_events.emplace_back(std::move(evt));
@@ -51,7 +51,7 @@ boost::future<std::vector<std::shared_ptr<hal::Result>>> cmEvent::WaitFor(
   CmEvent* e = nullptr;
   const auto& queue = device_state->cm_queue_;
   context::Context ctx{};
-  cmEvent event{ctx, device_state, e, queue};
+  Event event{ctx, device_state, e, queue};
   auto future = event.GetFuture();
   auto results = future.then([ hal_events = std::move(hal_events), device_state ](decltype(future) fut) {
     std::vector<std::shared_ptr<hal::Result>> results;
@@ -72,26 +72,26 @@ boost::future<std::vector<std::shared_ptr<hal::Result>>> cmEvent::WaitFor(
   return results;
 }
 
-cmEvent::cmEvent(const context::Context& ctx, std::shared_ptr<cmDeviceState> device_state, CmEvent* cm_event,
-                 const std::unique_ptr<cmDeviceState::cmQueueStruct>& queue)
-    : cmEvent(ctx, device_state, cm_event, queue, std::make_shared<cmResult>(ctx, device_state, cm_event)) {}
+Event::Event(const context::Context& ctx, std::shared_ptr<DeviceState> device_state, CmEvent* cm_event,
+             const std::unique_ptr<DeviceState::QueueStruct>& queue)
+    : Event(ctx, device_state, cm_event, queue, std::make_shared<Result>(ctx, device_state, cm_event)) {}
 
-cmEvent::cmEvent(const context::Context& ctx, std::shared_ptr<cmDeviceState> device_state, CmEvent* cm_event,
-                 const std::unique_ptr<cmDeviceState::cmQueueStruct>& queue, const std::shared_ptr<hal::Result>& result)
-    : ctx_{ctx}, queue_{std::move(queue)}, cm_event_{cm_event}, state_{std::make_shared<cmFutureState>()} {
+Event::Event(const context::Context& ctx, std::shared_ptr<DeviceState> device_state, CmEvent* cm_event,
+             const std::unique_ptr<DeviceState::QueueStruct>& queue, const std::shared_ptr<hal::Result>& result)
+    : ctx_{ctx}, queue_{std::move(queue)}, cm_event_{cm_event}, state_{std::make_shared<FutureState>()} {
   state_->result = result;
   if (!cm_event_) {
     state_->prom.set_value(state_->result);
   }
 }
 
-cmEvent::~cmEvent() {
+Event::~Event() {
   if (cm_event_ && !started_) {
     state_->prom.set_value(std::shared_ptr<hal::Result>());
   }
 }
 
-boost::shared_future<std::shared_ptr<hal::Result>> cmEvent::GetFuture() {
+boost::shared_future<std::shared_ptr<hal::Result>> Event::GetFuture() {
   std::lock_guard<std::mutex> lock{mu_};
   if (!cm_event_) {
     return boost::make_ready_future(state_->result);
@@ -115,10 +115,10 @@ boost::shared_future<std::shared_ptr<hal::Result>> cmEvent::GetFuture() {
   return fut_;
 }
 
-void cmEvent::EventComplete(CmEvent* evt, int status, void* data) {
-  auto state = static_cast<cmFutureState*>(data);
+void Event::EventComplete(CmEvent* evt, int status, void* data) {
+  auto state = static_cast<FutureState*>(data);
 
-  std::shared_ptr<cmFutureState> self_ref;
+  std::shared_ptr<FutureState> self_ref;
 
   {
     std::lock_guard<std::mutex> lock{state->mu};

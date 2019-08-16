@@ -16,8 +16,7 @@ namespace {
 // more efficient cm builtin functions.
 class InsnOptimizer : public sem::Visitor {
  public:
-  explicit InsnOptimizer(bool cl_khr_fp16, const hal::proto::HardwareSettings& settings)
-      : cl_khr_fp16_{cl_khr_fp16}, settings_{settings} {}
+  explicit InsnOptimizer(const hal::proto::HardwareSettings& settings) : settings_{settings} {}
 
   void Visit(const sem::IntConst& node) override {}
 
@@ -165,14 +164,13 @@ class InsnOptimizer : public sem::Visitor {
   }
 
  private:
-  bool cl_khr_fp16_;
   hal::proto::HardwareSettings settings_;
 };
 
 }  // namespace
 
-void OptimizeKernel(const lang::KernelInfo& ki, bool cl_khr_fp16, const hal::proto::HardwareSettings& settings) {
-  InsnOptimizer opt(cl_khr_fp16, settings);
+void OptimizeKernel(const lang::KernelInfo& ki, const hal::proto::HardwareSettings& settings) {
+  InsnOptimizer opt(settings);
   ki.kfunc->Accept(opt);
 }
 

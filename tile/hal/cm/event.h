@@ -17,12 +17,12 @@ namespace hal {
 namespace cm {
 
 // Implements hal::Event in terms of cm events.
-class cmEvent final : public hal::Event {
+class Event final : public hal::Event {
  public:
   // Casts a hal::Event to an Event, throwing an exception if the supplied
   // hal::Event isn't an
   // cm event, or if it's an event for a different context.
-  static std::shared_ptr<cmEvent> Downcast(const std::shared_ptr<hal::Event>& event);
+  static std::shared_ptr<Event> Downcast(const std::shared_ptr<hal::Event>& event);
 
   // Casts a vector of hal::Event to a vector of cl_event, throwing an exception
   // if the supplied
@@ -32,27 +32,27 @@ class cmEvent final : public hal::Event {
   // input vector to keep the
   // events alive.
   static std::vector<CmEvent*> Downcast(const std::vector<std::shared_ptr<hal::Event>>& events,
-                                        const std::unique_ptr<cmDeviceState::cmQueueStruct>& queue);
+                                        const std::unique_ptr<DeviceState::QueueStruct>& queue);
 
   // Returns a future that waits for all of the supplied events to complete.
   static boost::future<std::vector<std::shared_ptr<hal::Result>>> WaitFor(
-      const std::vector<std::shared_ptr<hal::Event>>& events, std::shared_ptr<cmDeviceState> device_state);
+      const std::vector<std::shared_ptr<hal::Event>>& events, std::shared_ptr<DeviceState> device_state);
 
-  cmEvent(const context::Context& ctx, std::shared_ptr<cmDeviceState> device_state, CmEvent* cm_event,
-          const std::unique_ptr<cmDeviceState::cmQueueStruct>& queue);
+  Event(const context::Context& ctx, std::shared_ptr<DeviceState> device_state, CmEvent* cm_event,
+        const std::unique_ptr<DeviceState::QueueStruct>& queue);
 
-  cmEvent(const context::Context& ctx, std::shared_ptr<cmDeviceState> device_state, CmEvent* cm_event,
-          const std::unique_ptr<cmDeviceState::cmQueueStruct>& queue, const std::shared_ptr<hal::Result>& result);
+  Event(const context::Context& ctx, std::shared_ptr<DeviceState> device_state, CmEvent* cm_event,
+        const std::unique_ptr<DeviceState::QueueStruct>& queue, const std::shared_ptr<hal::Result>& result);
 
-  ~cmEvent() final;
+  ~Event() final;
 
   boost::shared_future<std::shared_ptr<hal::Result>> GetFuture() final;
 
  private:
-  struct cmFutureState {
+  struct FutureState {
     std::mutex mu;
     bool completed = false;
-    std::shared_ptr<cmFutureState> self;  // Set iff clSetEventCallback is in flight
+    std::shared_ptr<FutureState> self;  // Set iff clSetEventCallback is in flight
     std::shared_ptr<hal::Result> result;
     boost::promise<std::shared_ptr<hal::Result>> prom;
   };
@@ -60,11 +60,11 @@ class cmEvent final : public hal::Event {
   static void EventComplete(CmEvent* evt, int32_t status, void* data);
 
   context::Context ctx_;
-  const std::unique_ptr<cmDeviceState::cmQueueStruct>& queue_;
+  const std::unique_ptr<DeviceState::QueueStruct>& queue_;
   std::mutex mu_;
   bool started_ = false;
   CmEvent* cm_event_;
-  std::shared_ptr<cmFutureState> state_;
+  std::shared_ptr<FutureState> state_;
   boost::shared_future<std::shared_ptr<hal::Result>> fut_;
 };
 

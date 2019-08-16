@@ -11,17 +11,17 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-std::shared_ptr<cmBuffer> cmBuffer::Downcast(const std::shared_ptr<hal::Buffer>& buffer) {
-  std::shared_ptr<cmBuffer> buf = std::dynamic_pointer_cast<cmBuffer>(buffer);
+std::shared_ptr<Buffer> Buffer::Downcast(const std::shared_ptr<hal::Buffer>& buffer) {
+  std::shared_ptr<Buffer> buf = std::dynamic_pointer_cast<Buffer>(buffer);
   return buf;
 }
 
-cmBuffer* cmBuffer::Downcast(hal::Buffer* buffer) {
-  cmBuffer* buf = dynamic_cast<cmBuffer*>(buffer);
+Buffer* Buffer::Downcast(hal::Buffer* buffer) {
+  Buffer* buf = dynamic_cast<Buffer*>(buffer);
   return buf;
 }
 
-cmBuffer::cmBuffer(std::uint64_t size) : size_{size} {}
+Buffer::Buffer(std::uint64_t size) : size_{size} {}
 
 }  // namespace cm
 }  // namespace hal

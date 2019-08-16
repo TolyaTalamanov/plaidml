@@ -16,7 +16,7 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-hal::proto::HardwareInfo cmGetHardwareInfo(const proto::DeviceInfo& info);
+hal::proto::HardwareInfo GetHardwareInfo(const proto::DeviceInfo& info);
 
 }  // namespace cm
 }  // namespace hal

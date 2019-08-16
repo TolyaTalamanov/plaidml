@@ -17,7 +17,7 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-cmDeviceSet::cmDeviceSet(const context::Context& ctx) {
+DeviceSet::DeviceSet(const context::Context& ctx) {
   context::Activity platform_activity{ctx, "tile::hal::cm::Platform"};
   proto::PlatformInfo pinfo;
   pinfo.set_name("CM");
@@ -31,26 +31,26 @@ cmDeviceSet::cmDeviceSet(const context::Context& ctx) {
   device_activity.AddMetadata(info);
   *info.mutable_platform_id() = platform_activity.ctx().activity_id();
 
-  CmDevice* pCmDev = NULL;
+  CmDevice* pCmDev = nullptr;
   UINT version = 0;
   cm_result_check(::CreateCmDevice(pCmDev, version));
   if (version < CM_1_0) {
     throw std::runtime_error(std::string("The runtime API version is later than runtime DLL version "));
   }
 
-  auto dev = std::make_shared<cmDevice>(device_activity.ctx(), pCmDev, std::move(info));
+  auto dev = std::make_shared<Device>(device_activity.ctx(), pCmDev, std::move(info));
 
-  std::shared_ptr<cmDevice> first_dev;
+  std::shared_ptr<Device> first_dev;
   first_dev = dev;
 
   devices_.emplace_back(std::move(dev));
 
-  host_memory_ = std::make_unique<cmHostMemory>(first_dev->device_state());
+  host_memory_ = std::make_unique<HostMemory>(first_dev->device_state());
 }
 
-const std::vector<std::shared_ptr<hal::Device>>& cmDeviceSet::devices() { return devices_; }
+const std::vector<std::shared_ptr<hal::Device>>& DeviceSet::devices() { return devices_; }
 
-Memory* cmDeviceSet::host_memory() { return host_memory_.get(); }
+Memory* DeviceSet::host_memory() { return host_memory_.get(); }
 
 }  // namespace cm
 }  // namespace hal

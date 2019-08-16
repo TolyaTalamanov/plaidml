@@ -20,29 +20,14 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-int cmComputeKernel::count = 0;
-
-void write_buffer_file(int byte_size, void* tmp, std::string filename) {
-  float* buffer = reinterpret_cast<float*>(tmp);
-  FILE* stream = NULL;
-  int float_size = byte_size / sizeof(float);
-  stream = fopen(filename.c_str(), "w");
-  for (int i = 0; i < float_size; i++) {
-    fprintf(stream, "%.6g\n", *buffer);
-    buffer++;
-  }
-  fclose(stream);
-}
-
-cmComputeKernel::cmComputeKernel(std::shared_ptr<cmDeviceState> device_state, CmKernel* kernel,
-                                 const lang::KernelInfo& info, context::proto::ActivityID kernel_id,
-                                 const std::shared_ptr<Emit>& cm)
+ComputeKernel::ComputeKernel(std::shared_ptr<DeviceState> device_state, CmKernel* kernel, const lang::KernelInfo& info,
+                             context::proto::ActivityID kernel_id, const std::shared_ptr<Emit>& cm)
     : device_state_{device_state}, kernel_{std::move(kernel)}, ki_(info), kernel_id_(kernel_id), cm_{cm} {
   pKernelArray_ = nullptr;
   pts_ = nullptr;
 }
 
-cmComputeKernel::~cmComputeKernel() {
+ComputeKernel::~ComputeKernel() {
   auto pCmDev = device_state_->cmdev();
   cm_result_check(pCmDev->DestroyTask(pKernelArray_));
   cm_result_check(pCmDev->DestroyKernel(kernel_));
@@ -56,17 +41,17 @@ unsigned int max_divisor(unsigned int a, unsigned int uplimit) {
   return uplimit;
 }
 
-std::shared_ptr<hal::Event> cmComputeKernel::Run(const context::Context& ctx,
-                                                 const std::vector<std::shared_ptr<hal::Buffer>>& params,
-                                                 const std::vector<std::shared_ptr<hal::Event>>& dependencies,
-                                                 bool enable_profiling) {
+std::shared_ptr<hal::Event> ComputeKernel::Run(const context::Context& ctx,
+                                               const std::vector<std::shared_ptr<hal::Buffer>>& params,
+                                               const std::vector<std::shared_ptr<hal::Event>>& dependencies,
+                                               bool enable_profiling) {
   const auto& queue = device_state_->cm_queue_;
   std::lock_guard<std::mutex> lock{mu_};
 
   auto pCmQueue = device_state_->cm_queue_->pCmQueue_;
 
   for (std::size_t i = 0; i < params.size(); ++i) {
-    cmBuffer* buf = cmBuffer::Downcast(params[i].get());
+    Buffer* buf = Buffer::Downcast(params[i].get());
     VLOG(4) << "  Param " << i << ": " << buf << " size=" << buf->size();
     CMMemBuffer* membuf = dynamic_cast<CMMemBuffer*>(buf);
     if (i == 0) {
@@ -129,12 +114,12 @@ std::shared_ptr<hal::Event> cmComputeKernel::Run(const context::Context& ctx,
   }
 
   for (std::size_t i = 0; i < params.size(); ++i) {
-    cmBuffer* buf = cmBuffer::Downcast(params[i].get());
+    Buffer* buf = Buffer::Downcast(params[i].get());
     buf->ReleaseDeviceBuffer();
   }
 
-  auto result = std::make_shared<cmKernelResult>(activity.ctx(), device_state_, done, ki_);
-  return std::make_shared<cmEvent>(activity.ctx(), device_state_, std::move(done), queue, std::move(result));
+  auto result = std::make_shared<KernelResult>(activity.ctx(), device_state_, done, ki_);
+  return std::make_shared<Event>(activity.ctx(), device_state_, std::move(done), queue, std::move(result));
 }
 
 }  // namespace cm

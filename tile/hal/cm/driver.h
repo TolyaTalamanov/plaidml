@@ -14,9 +14,9 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-class cmDriver final : public hal::Driver {
+class Driver final : public hal::Driver {
  public:
-  explicit cmDriver(const context::Context& ctx);
+  explicit Driver(const context::Context& ctx);
 
   const std::vector<std::shared_ptr<hal::DeviceSet>>& device_sets() final;
 

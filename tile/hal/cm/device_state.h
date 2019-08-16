@@ -16,16 +16,16 @@ namespace cm {
 
 // DeviceState represents the state of a device, including all cm objects needed
 // to control the device.
-class cmDeviceState {
+class DeviceState {
  public:
-  struct cmQueueStruct {
+  struct QueueStruct {
     CmQueue* pCmQueue_;
   };
   void Flush() const;
 
-  cmDeviceState(const context::Context& ctx, CmDevice* pCmDev, proto::DeviceInfo dinfo);
+  DeviceState(const context::Context& ctx, CmDevice* pCmDev, proto::DeviceInfo dinfo);
 
-  ~cmDeviceState();
+  ~DeviceState();
 
   void Initialize();
 
@@ -36,7 +36,7 @@ class cmDeviceState {
 
   void FlushCommandQueue();
 
-  std::unique_ptr<cmQueueStruct> cm_queue_;
+  std::unique_ptr<QueueStruct> cm_queue_;
 
  private:
   CmDevice* pCmDev_;

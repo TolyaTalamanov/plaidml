@@ -9,15 +9,15 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-cmDriver::cmDriver(const context::Context& ctx) {
+Driver::Driver(const context::Context& ctx) {
   context::Activity enumerating{ctx, "tile::hal::cm::Enumerating"};
-  auto device_set = std::make_shared<cmDeviceSet>(enumerating.ctx());
+  auto device_set = std::make_shared<DeviceSet>(enumerating.ctx());
   if (device_set->devices().size()) {
     device_sets_.emplace_back(std::move(device_set));
   }
 }
 
-const std::vector<std::shared_ptr<hal::DeviceSet>>& cmDriver::device_sets() { return device_sets_; }
+const std::vector<std::shared_ptr<hal::DeviceSet>>& Driver::device_sets() { return device_sets_; }
 
 }  // namespace cm
 }  // namespace hal

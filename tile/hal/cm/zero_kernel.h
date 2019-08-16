@@ -17,21 +17,21 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-class cmZeroKernel final : public Kernel {
+class ZeroKernel final : public Kernel {
  public:
-  cmZeroKernel(const std::shared_ptr<cmDeviceState>& device_state, const lang::KernelInfo& kinfo,
-               context::proto::ActivityID kid);
+  ZeroKernel(const std::shared_ptr<DeviceState>& device_state, const lang::KernelInfo& kinfo,
+             context::proto::ActivityID kid);
 
   std::shared_ptr<hal::Event> Run(const context::Context& ctx, const std::vector<std::shared_ptr<hal::Buffer>>& params,
                                   const std::vector<std::shared_ptr<hal::Event>>& dependencies,
                                   bool enable_profiling) final;
 
  private:
-  std::shared_ptr<cmDeviceState> device_state_;
+  std::shared_ptr<DeviceState> device_state_;
   lang::KernelInfo kinfo_;
   context::proto::ActivityID kid_;
 
-  CmEvent* FillBufferImpl(const cmDeviceState::cmQueueStruct* queue, cmBuffer* buf, void* pattern, size_t pattern_size,
+  CmEvent* FillBufferImpl(const DeviceState::QueueStruct* queue, Buffer* buf, void* pattern, size_t pattern_size,
                           const std::vector<CmEvent*>& deps);
 };
 

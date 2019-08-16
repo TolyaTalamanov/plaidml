@@ -13,9 +13,9 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-class cmExecutable final : public hal::Executable {
+class Executable final : public hal::Executable {
  public:
-  explicit cmExecutable(std::vector<std::unique_ptr<Kernel>> kernels);
+  explicit Executable(std::vector<std::unique_ptr<Kernel>> kernels);
 
   std::shared_ptr<hal::Event> Run(const context::Context& ctx, std::size_t kernel_index,
                                   const std::vector<std::shared_ptr<hal::Buffer>>& params,

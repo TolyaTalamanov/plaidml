@@ -15,9 +15,9 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-class cmHostMemory final : public Memory {
+class HostMemory final : public Memory {
  public:
-  explicit cmHostMemory(std::shared_ptr<cmDeviceState> device_state);
+  explicit HostMemory(std::shared_ptr<DeviceState> device_state);
 
   std::uint64_t size_goal() const final {
     // TODO: Actually query the system physical memory size.
@@ -33,7 +33,7 @@ class cmHostMemory final : public Memory {
   std::shared_ptr<hal::Arena> MakeArena(std::uint64_t size, BufferAccessMask access) final;
 
  private:
-  std::shared_ptr<cmDeviceState> device_state_;
+  std::shared_ptr<DeviceState> device_state_;
 };
 
 }  // namespace cm

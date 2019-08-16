@@ -19,7 +19,7 @@ namespace cm {
 
 namespace gp = ::google::protobuf;
 
-hal::proto::HardwareInfo cmGetHardwareInfo(const proto::DeviceInfo& info) {
+hal::proto::HardwareInfo GetHardwareInfo(const proto::DeviceInfo& info) {
   hal::proto::HardwareInfo result;
   result.set_type(info.type());
   auto vendor = info.vendor();
@@ -62,12 +62,8 @@ hal::proto::HardwareInfo cmGetHardwareInfo(const proto::DeviceInfo& info) {
   // Use shared memory by default since most platforms support it.
   settings->set_use_global(false);
 
-// Memory width
-#ifdef __APPLE__
-  settings->set_mem_width(32);
-#else
+  // Memory width
   settings->set_mem_width(info.global_mem_cacheline_size());
-#endif
 
   // Maximum local memory
   settings->set_max_mem(info.local_mem_size());

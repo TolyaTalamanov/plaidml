@@ -13,14 +13,14 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-cmDevice::cmDevice(const context::Context& ctx, CmDevice* pCmDev, proto::DeviceInfo dinfo)
-    : device_state_{std::make_shared<cmDeviceState>(ctx, pCmDev, std::move(dinfo))},
-      compiler_{std::make_unique<cmCompiler>(device_state_)},
-      executor_{std::make_unique<cmExecutor>(device_state_)} {}
+Device::Device(const context::Context& ctx, CmDevice* pCmDev, proto::DeviceInfo dinfo)
+    : device_state_{std::make_shared<DeviceState>(ctx, pCmDev, std::move(dinfo))},
+      compiler_{std::make_unique<Compiler>(device_state_)},
+      executor_{std::make_unique<Executor>(device_state_)} {}
 
-void cmDevice::Initialize(const hal::proto::HardwareSettings& settings) { device_state_->Initialize(); }
+void Device::Initialize(const hal::proto::HardwareSettings& settings) { device_state_->Initialize(); }
 
-std::string cmDevice::description() {  //
+std::string Device::description() {  //
   return device_state()->info().vendor() + " " + device_state()->info().name() + " (CM)";
 }
 

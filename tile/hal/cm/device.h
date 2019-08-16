@@ -18,9 +18,9 @@ namespace hal {
 namespace cm {
 
 // Device implements the hal::Device model as a single cm device.
-class cmDevice final : public hal::Device {
+class Device final : public hal::Device {
  public:
-  cmDevice(const context::Context& ctx, CmDevice* pCmDev, proto::DeviceInfo dinfo);
+  Device(const context::Context& ctx, CmDevice* pCmDev, proto::DeviceInfo dinfo);
 
   void Initialize(const hal::proto::HardwareSettings& settings) final;
 
@@ -34,10 +34,10 @@ class cmDevice final : public hal::Device {
 
   hal::Executor* executor() final { return executor_.get(); }
 
-  std::shared_ptr<cmDeviceState> device_state() { return device_state_; }
+  std::shared_ptr<DeviceState> device_state() { return device_state_; }
 
  private:
-  std::shared_ptr<cmDeviceState> device_state_;
+  std::shared_ptr<DeviceState> device_state_;
   const std::unique_ptr<hal::Compiler> compiler_;
   const std::unordered_map<std::string, std::unique_ptr<hal::Loader>> il_loader_map_;
   const std::unique_ptr<hal::Executor> executor_;

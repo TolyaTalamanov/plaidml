@@ -18,9 +18,9 @@ namespace hal {
 namespace cm {
 
 // DeviceSet implements the hal::DeviceSet model as a single cm platform.
-class cmDeviceSet final : public hal::DeviceSet {
+class DeviceSet final : public hal::DeviceSet {
  public:
-  explicit cmDeviceSet(const context::Context& ctx);
+  explicit DeviceSet(const context::Context& ctx);
 
   const std::vector<std::shared_ptr<hal::Device>>& devices() final;
 

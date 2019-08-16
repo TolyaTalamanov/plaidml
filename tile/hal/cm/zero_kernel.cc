@@ -10,23 +10,23 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-cmZeroKernel::cmZeroKernel(const std::shared_ptr<cmDeviceState>& device_state, const lang::KernelInfo& kinfo,
-                           context::proto::ActivityID kid)
+ZeroKernel::ZeroKernel(const std::shared_ptr<DeviceState>& device_state, const lang::KernelInfo& kinfo,
+                       context::proto::ActivityID kid)
     : device_state_{device_state}, kinfo_{kinfo}, kid_(kid) {}
 
-std::shared_ptr<hal::Event> cmZeroKernel::Run(const context::Context& ctx,
-                                              const std::vector<std::shared_ptr<hal::Buffer>>& params,
-                                              const std::vector<std::shared_ptr<hal::Event>>& dependencies,
-                                              bool enable_profiling) {
+std::shared_ptr<hal::Event> ZeroKernel::Run(const context::Context& ctx,
+                                            const std::vector<std::shared_ptr<hal::Buffer>>& params,
+                                            const std::vector<std::shared_ptr<hal::Event>>& dependencies,
+                                            bool enable_profiling) {
   const auto& queue = device_state_->cm_queue_;
-  auto deps = cmEvent::Downcast(dependencies, queue);
+  auto deps = Event::Downcast(dependencies, queue);
   IVLOG(4, "Running zero-fill memory " << kinfo_.kname);
 
   if (params.size() != 1) {
     throw error::Internal("Zero-memory operation invoked with a memory region count != 1");
   }
 
-  cmBuffer* buf = cmBuffer::Downcast(params[0].get());
+  Buffer* buf = Buffer::Downcast(params[0].get());
   IVLOG(4, "  Buffer: " << buf);
 
   context::Activity activity{ctx, "tile::hal::cm::Buffer::Fill"};
@@ -35,7 +35,7 @@ std::shared_ptr<hal::Event> cmZeroKernel::Run(const context::Context& ctx,
   activity.AddMetadata(rinfo);
 
   CmEvent* done;
-  return std::make_shared<cmEvent>(activity.ctx(), device_state_, done, queue);
+  return std::make_shared<Event>(activity.ctx(), device_state_, done, queue);
 }
 
 }  // namespace cm

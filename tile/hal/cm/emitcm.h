@@ -23,8 +23,7 @@ namespace cm {
 
 class Emit : public lang::EmitC {
  public:
-  explicit Emit(bool cl_khr_fp16, bool cl_khr_fp64, lang::KernelInfo ki)
-      : cl_khr_fp16_{cl_khr_fp16}, cl_khr_fp64_{cl_khr_fp64}, scope_{nullptr}, ki_{ki} {}
+  explicit Emit(lang::KernelInfo ki) : scope_{nullptr}, ki_{ki} {}
 
   void Visit(const sem::IntConst&) final;
   void Visit(const sem::LookupLVal&) final;
@@ -111,8 +110,7 @@ class Emit : public lang::EmitC {
   bool IsVector(const sem::LookupLVal& v);
   bool IsVector(const sem::SubscriptLVal& v);
   bool depend_on_local_id(sem::ExprPtr init);
-  bool cl_khr_fp16_;
-  bool cl_khr_fp64_;
+
   lang::Scope<sem::Type>* scope_;
   bool is_sub_group_broadcast_first_val = false;
   bool in_read_statement = false;

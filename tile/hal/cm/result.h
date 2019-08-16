@@ -12,7 +12,7 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-struct cmResultInfo {
+struct ResultInfo {
   ulong queued_time;
   ulong submit_time;
   ulong start_time;
@@ -21,35 +21,34 @@ struct cmResultInfo {
   std::chrono::high_resolution_clock::duration execution_duration;
 };
 
-// Implements hal::Result in terms of cm events.
-class cmResult final : public hal::Result {
+class Result final : public hal::Result {
  public:
-  cmResult(const context::Context& ctx, std::shared_ptr<cmDeviceState> device_state, CmEvent* event);
+  Result(const context::Context& ctx, std::shared_ptr<DeviceState> device_state, CmEvent* event);
 
   std::chrono::high_resolution_clock::duration GetDuration() const final;
   void LogStatistics() const final;
 
  private:
   context::Context ctx_;
-  std::shared_ptr<cmDeviceState> device_state_;
+  std::shared_ptr<DeviceState> device_state_;
   CmEvent* event_;
-  mutable std::unique_ptr<cmResultInfo> info_;
+  mutable std::unique_ptr<ResultInfo> info_;
   mutable std::once_flag once_;
 };
 
-class cmKernelResult final : public hal::Result {
+class KernelResult final : public hal::Result {
  public:
-  cmKernelResult(const context::Context& ctx, std::shared_ptr<cmDeviceState> device_state, CmEvent* event,
-                 const lang::KernelInfo& ki);
+  KernelResult(const context::Context& ctx, std::shared_ptr<DeviceState> device_state, CmEvent* event,
+               const lang::KernelInfo& ki);
 
   std::chrono::high_resolution_clock::duration GetDuration() const final;
   void LogStatistics() const final;
 
  private:
   context::Context ctx_;
-  std::shared_ptr<cmDeviceState> device_state_;
+  std::shared_ptr<DeviceState> device_state_;
   CmEvent* event_;
-  mutable std::unique_ptr<cmResultInfo> info_;
+  mutable std::unique_ptr<ResultInfo> info_;
   mutable std::once_flag once_;
 
   lang::KernelInfo ki_;
