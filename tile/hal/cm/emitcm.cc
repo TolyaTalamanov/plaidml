@@ -33,9 +33,9 @@ static std::map<std::pair<DataType, sem::LimitConst::Which>, std::string> LimitC
     {{DataType::FLOAT64, sem::LimitConst::MIN}, "-DBL_MAX"}, {{DataType::FLOAT64, sem::LimitConst::MAX}, "DBL_MAX"},
 };
 
-static std::map<std::string, std::string> FuncNameMap = {{"exp", "_EXP"},   {"log", "_LOG"},    {"sqrt", "_SQRT"},
-                                                         {"pow", "_POW"},   {"sin", "_SIN"},    {"cos", "_COS"},
-                                                         {"tanh", "_TANH"}, {"round", "_ROUND"}};
+static std::map<std::string, std::string> FuncNameMap = {
+    {"floor", "_FLOOR"}, {"ceil", "_CEIL"}, {"exp", "_EXP"}, {"log", "_LOG"},   {"sqrt", "_SQRT"},
+    {"pow", "_POW"},     {"sin", "_SIN"},   {"cos", "_COS"}, {"tanh", "_TANH"}, {"round", "_ROUND"}};
 
 std::string Emit::to_string(const sem::LValPtr& v) {
   // TODO move this function to semtree

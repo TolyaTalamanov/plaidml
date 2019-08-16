@@ -111,6 +111,8 @@ std::string kernel_header =  // NOLINT
 #define _E  2.71828182845904
 #define _ln2 0.69314718055995
 
+#define _CEIL(_N)	cmtl::cm_ceil<float,4>(_N,0)
+#define _FLOOR(_N)  cmtl::cm_floor<float,4>(_N,0)
 #define _EXP(_N)	cm_pow(_E,_N,0)
 #define _POW(_N,_M)	_pow(_N,_M)
 #define _SQRT(_N)	cm_sqrt(_N,0)
@@ -246,20 +248,6 @@ extern "C" _GENX_ void write_single_atomic_float(SurfaceIndex index, int offset_
 }
 
 template <typename T, int N>
-_GENX_ void _write(SurfaceIndex suf, int offset_bytes, vector<T,N> v)              
-{
-	int offset=offset_bytes/sizeof(T);
-	if(_mod(offset,16/sizeof(T))==0){
-		write(suf,sizeof(T)*offset,v);
-	}
-	else{
-		for(int i=0;i<N;i++){
-			write_single_atomic_float(suf, sizeof(T)*(offset+i), v(i)); 	
-		}
-	}
-
-}
-template <typename T, int N>
 _GENX_ void _read(SurfaceIndex suf, int offset_bytes, vector_ref<T,N> v)              
 {
 	int offset=offset_bytes/sizeof(T);
@@ -277,9 +265,30 @@ _GENX_ void _read(SurfaceIndex suf, int offset_bytes, vector_ref<T,N> v)
 }
 
 template <typename T, int N>
+_GENX_ void _write(SurfaceIndex suf, int offset_bytes, vector<T,N> v)              
+{
+	int offset=offset_bytes/sizeof(T);
+	if(_mod(offset,16/sizeof(T))==0){
+		write(suf,sizeof(T)*offset,v);
+	}
+	else{
+		for(int i=0;i<N;i++){
+			write_single_atomic_float(suf, sizeof(T)*(offset+i), v(i)); 	
+		}
+	}
+
+}
+
+template <typename T, int N>
 _GENX_ void _read(SurfaceIndex suf, int offset, vector_ref<uint,N> element_offset, vector_ref<T,N> v)              
 {
 	read(suf, offset, element_offset, v);
+}
+
+template <typename T, int N>
+_GENX_ void _write(SurfaceIndex suf, int offset, vector_ref<uint,N> element_offset, vector_ref<T,N> v)              
+{
+	write(suf, offset, element_offset, v);
 }
 
 _GENX_ void write_single_char(SurfaceIndex index, int offset_bytes, char c)              
