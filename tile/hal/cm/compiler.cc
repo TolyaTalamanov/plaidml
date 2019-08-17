@@ -136,11 +136,96 @@ std::string kernel_header =  // NOLINT
 #define FLT_MAX		3.402823e+38		
 #define DBL_MAX		1.79769e+308
 
+#define MIN_RW_BYTES	16
+
 _GENX_ int _mod(int a, int b)              
 {
 	return a - ( a / b ) * b;
 }
 
+_GENX_ int _cmamp(SurfaceIndex suf, int offset_bytes, int b, int c)              
+{
+	vector<int, MIN_RW_BYTES / sizeof(int)> data;
+	read(suf, offset_bytes, data);
+
+	int a = data(_mod(offset_bytes / sizeof(int), MIN_RW_BYTES / sizeof(int)));
+	if(a < b) return b;
+	if(a > c) return c;
+	return a;
+}
+
+template <typename T>
+_GENX_ uint _cast_dword_to_uint(T f)              
+{
+	return *(uint *) (&f);
+}
+
+template <typename T>
+_GENX_ void _write_single_element(SurfaceIndex suf, int offset_bytes, T e)              
+{	
+	int offset_type = offset_bytes / sizeof(T);
+	int min_rw_type = MIN_RW_BYTES / sizeof(T);
+
+	vector<T, MIN_RW_BYTES / sizeof(T)> data;
+	read(suf, offset_bytes / MIN_RW_BYTES * MIN_RW_BYTES, data);
+	data(offset_type % min_rw_type) = e;
+	write(suf, offset_bytes / MIN_RW_BYTES * MIN_RW_BYTES, data);
+}
+
+template <typename T>
+_GENX_ void _write_atomic_single_dword(SurfaceIndex suf, int offset_bytes, T e)              
+{
+	int offset_dword = offset_bytes / sizeof(T);
+	int min_rw_dword = MIN_RW_BYTES / sizeof(T);
+	int offset_uint = offset_dword;
+	int min_rw_uint = min_rw_dword;
+
+	vector<T, MIN_RW_BYTES/sizeof(T)> data;
+	read(suf, sizeof(T) * offset_dword, data);
+
+	T data_e = data(offset_dword % min_rw_dword);
+
+	vector<uint, MIN_RW_BYTES / sizeof(uint)> temp1 = 0;
+	temp1(offset_uint % min_rw_uint) = _cast_dword_to_uint(data_e);
+
+	vector<uint, MIN_RW_BYTES / sizeof(uint)> temp0 = 0;
+	temp0(offset_uint % min_rw_uint) = _cast_dword_to_uint(e);
+
+	uint aligned_offset_uint = (uint)(offset_uint - offset_uint % min_rw_uint);
+
+	vector<uint, MIN_RW_BYTES / sizeof(uint)> u;
+	for(int i = 0; i < min_rw_uint; i++){
+		u(i) = aligned_offset_uint + i;
+	}
+
+	write_atomic<ATOMIC_CMPXCHG, uint>(suf, u, temp0, temp1);
+}
+
+_GENX_ void _write_atomic_single_long(SurfaceIndex suf, int offset_bytes, long e)              
+{
+	int offset_uint = offset_bytes / sizeof(uint);
+	int min_rw_uint = MIN_RW_BYTES / sizeof(uint);
+
+	vector<uint, MIN_RW_BYTES / sizeof(uint)> temp1;
+	read(suf, sizeof(uint) * offset_uint, temp1);
+
+	vector<uint, MIN_RW_BYTES / sizeof(uint)> temp0 = 0;
+
+	temp0(offset_bytes % min_rw_uint) = (uint)e;
+	
+	if(sizeof(long) == 8){
+		temp0(offset_bytes % min_rw_uint + 1)=(uint)(e >> 32);
+	}
+
+	uint aligned_offset_uint = (uint)(offset_uint - offset_uint % min_rw_uint);
+
+	vector<uint, MIN_RW_BYTES / sizeof(uint)> u;
+	for(int i = 0; i < min_rw_uint; i++){
+		u(i) = aligned_offset_uint + i;
+	}
+
+	write_atomic<ATOMIC_CMPXCHG, uint>(suf, u, temp0, temp1);
+}
 
 _GENX_ float _pow(float a, long b)              
 {
@@ -163,117 +248,46 @@ _GENX_ vector<T,N> _pow(vector_ref<T,N> a, long b)
 	return r;
 }
 
-extern "C" _GENX_ int _cmamp(SurfaceIndex idx, int offset, int b, int c)              
+template <typename T, int N>
+_GENX_ vector<T,N> merge(float f, vector<T,N> v2, vector<ushort,N> v3)              
 {
-	vector<int, 4> temp;
-	read(idx, offset, temp);
-	int a = temp(_mod(offset/sizeof(int), 4));
-	if(a < b) return b;
-	if(a > c) return c;
-	return a;
-}
-
-extern "C" _GENX_ uint cast_float_to_uint(float f)              
-{
-	float* fp = &f;
-	uint* uintp = (uint *) fp;
-	return *uintp;
-}
-
-extern "C" _GENX_ void write_single_atomic_uint(SurfaceIndex index, int offset_bytes, uint ui)              
-{
-	int offset=offset_bytes/sizeof(uint);
-	vector<uint, 4> temp1;
-	read(index, sizeof(uint) * (offset), temp1);
-
-	vector<uint, 4> temp0=temp1;
-	temp0(offset%4)=ui;
-
-	uint aligned_offset=(uint)(offset-offset%4);
-	vector<uint, 4> u;
-	for(int i = 0; i < 4; i++){
-		u(i) = aligned_offset+i;
-	}
-
-	write_atomic<ATOMIC_CMPXCHG,uint>(index, u, temp0, temp1);
-}
-
-
-extern "C" _GENX_ void write_single_atomic_long(SurfaceIndex index, int offset_bytes, long f)              
-{
-	int offset=offset_bytes/sizeof(uint);
-	vector<uint, 4> temp1;
-	read(index, sizeof(uint) * (offset), temp1);
-
-	vector<uint, 4> temp0 = temp1;
-	temp0(offset%4) = (uint)f;
-	
-	if(sizeof(long) == 8){
-		temp0(offset%4 + 1)=(uint)(f >> 32);
-	}
-
-	uint aligned_offset=(uint)(offset-offset%4);
-	vector<uint, 4> u;
-	for(int i = 0; i < 4; i++){
-		u(i) = aligned_offset+i;
-	}
-
-	write_atomic<ATOMIC_CMPXCHG,uint>(index, u, temp0, temp1);
-}
-
-extern "C" _GENX_ void write_single_atomic_float(SurfaceIndex index, int offset_bytes, float f)              
-{
-	int offset=offset_bytes/sizeof(float);
-
-	vector<float, 4> original;
-	read(index, sizeof(float) * (offset), original);
-
-	vector<uint, 4> temp1 = 0;
-	temp1(offset % 4) = cast_float_to_uint(original(offset%4));
-
-	vector<uint, 4> temp0 = temp1;
-	temp0(offset % 4) = cast_float_to_uint(f);
-
-	uint aligned_offset = (uint)(offset-offset % 4);
-
-	vector<uint, 4> u;
-	for(int i = 0; i < 4; i++){
-		u(i) = aligned_offset+i;
-	}
-
-	write_atomic<ATOMIC_CMPXCHG,uint>(index, u, temp0, temp1);
+	vector<T,N> r = 0;
+	r.merge(f, v2, v3);
+	return r;
 }
 
 template <typename T, int N>
 _GENX_ void _read(SurfaceIndex suf, int offset_bytes, vector_ref<T,N> v)              
 {
-	int offset=offset_bytes/sizeof(T);
-	if(_mod(offset,16/sizeof(T))==0){
-		read(suf,sizeof(T)*offset,v);
+	int offset_type = offset_bytes/sizeof(T);
+	int min_rw_type = MIN_RW_BYTES/sizeof(T);
+
+	if(_mod(offset_type, min_rw_type) == 0){
+		read(suf, sizeof(T) * offset_type, v);
 	}
 	else{
-		vector<T,2*N> v2=0;
-		read(suf,sizeof(T)*offset/16*16,v2);
-		for(int i=0;i<N;i++){
-			v(i)=v2(i+_mod(offset,16/sizeof(T)));	
+		vector<T, 2 * N> v2 = 0;
+		read(suf, offset_bytes / MIN_RW_BYTES * MIN_RW_BYTES, v2);
+		for(int i = 0; i < N; i++){
+			v(i) = v2(i + _mod(offset_type, min_rw_type));	
 		}
 	}
-
 }
 
 template <typename T, int N>
 _GENX_ void _write(SurfaceIndex suf, int offset_bytes, vector<T,N> v)              
 {
-	int offset=offset_bytes/sizeof(T);
-	if(_mod(offset,16/sizeof(T))==0){
-		write(suf,sizeof(T)*offset,v);
+	int offset_type = offset_bytes/sizeof(T);
+	int min_rw_type = MIN_RW_BYTES/sizeof(T);
+
+	if(_mod(offset_type, min_rw_type) == 0){
+		write(suf, sizeof(T) * offset_type, v);
 	}
 	else{
-		for(int i=0;i<N;i++){
-			write_single_atomic_float(suf, sizeof(T)*(offset+i), v(i)); 	
+		for(int i = 0; i < N; i++){
+			_write_atomic_single_dword(suf, sizeof(T) * (offset_type + i), v(i)); 	
 		}
 	}
-
 }
 
 template <typename T, int N>
@@ -286,39 +300,6 @@ template <typename T, int N>
 _GENX_ void _write(SurfaceIndex suf, int offset, vector_ref<uint,N> element_offset, vector_ref<T,N> v)              
 {
 	write(suf, offset, element_offset, v);
-}
-
-_GENX_ void write_single_char(SurfaceIndex index, int offset_bytes, char c)              
-{
-	vector<char, 16> temp;
-	read(index, offset_bytes/16*16, temp);
-	temp(offset_bytes%16)=c;
-	write(index, offset_bytes/16*16, temp);
-}
-
-_GENX_ void write_single_short(SurfaceIndex index, int offset_bytes, short s)              
-{
-	vector<short, 8> temp;
-	read(index, offset_bytes/16*16, temp);
-	temp(offset_bytes/sizeof(short)%8)=s;
-	write(index, offset_bytes/16*16, temp);
-}
-
-_GENX_ void write_single_half(SurfaceIndex index, int offset_bytes, half f)              
-{
-	vector<half, 8> temp;
-	read(index, offset_bytes/16*16, temp);
-	temp(offset_bytes/sizeof(half)%8)=f;
-	write(index, offset_bytes/16*16, temp);
-}
-
-
-template <typename T, int N>
-_GENX_ vector<T,N> merge(float f, vector<T,N> v2, vector<ushort,N> v3)              
-{
-	vector<T,N> r=0;
-	r.merge(f,v2,v3);
-	return r;
 }
 
 )***";                       // NOLINT

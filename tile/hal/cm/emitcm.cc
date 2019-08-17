@@ -253,44 +253,44 @@ void Emit::assign_global_var_to_temp(const sem::ExprPtr& e) {
   }
 }
 
-std::string c_dtype(const DataType& dt) {
+inline std::string c_dtype(const DataType& dt) {
   std::string base;
   switch (dt) {
     case DataType::BOOLEAN:
-      base = "bool";
+      base = "(bool)";
       break;
     case DataType::INT8:
-      base = "char";
+      base = "(char)";
       break;
     case DataType::INT16:
-      base = "short";
+      base = "(short)";
       break;
     case DataType::INT32:
-      base = "int";
+      base = "(int)";
       break;
     case DataType::INT64:
-      base = "long";
+      base = "(long)";
       break;
     case DataType::UINT8:
-      base = "uchar";
+      base = "(uchar)";
       break;
     case DataType::UINT16:
-      base = "ushort";
+      base = "(ushort)";
       break;
     case DataType::UINT32:
-      base = "uint";
+      base = "(uint)";
       break;
     case DataType::UINT64:
-      base = "ulong";
+      base = "(ulong)";
       break;
     case DataType::FLOAT16:
-      base = "half";
+      base = "(half)";
       break;
     case DataType::FLOAT32:
-      base = "float";
+      base = "(float)";
       break;
     case DataType::FLOAT64:
-      base = "double";
+      base = "(double)";
       break;
     default:
       throw std::runtime_error("Invalid tile type");
@@ -303,38 +303,32 @@ void Emit::SingleElementWrite(sem::LValPtr lhs, sem::ExprPtr rhs) {
   auto ty_lhs = TypeOf(lhs);
   switch (ty_lhs.dtype) {
     case DataType::INT8:
-      emit("write_single_char(");
-      break;
-    case DataType::INT32:
-      emit("write_single_atomic_uint(");
-      break;
     case DataType::UINT8:
-      emit("write_single_char(");
-      break;
     case DataType::INT16:
     case DataType::UINT16:
-      emit("write_single_short(");
-      break;
     case DataType::FLOAT16:
-      emit("write_single_half(");
+      emit("_write_single_element(");
+      break;
+    case DataType::INT32:
+    case DataType::UINT32:
+    case DataType::FLOAT32:
+      emit("_write_atomic_single_dword(");
       break;
     case DataType::INT64:
-      emit("write_single_atomic_long(");
-      break;
-    case DataType::UINT32:
-      emit("write_single_atomic_uint(");
-      break;
-    case DataType::FLOAT32:
-      emit("write_single_atomic_float(");
+      emit("_write_atomic_single_long(");
       break;
     default:
-      throw std::runtime_error("CM kernels currently not support datatype:" + c_dtype(ty_lhs.dtype));
+      throw std::runtime_error("SingleElementWrite: this data type is not supported!");
   }
   in_write_statement = true;
   write_type = ty_lhs;
   lhs->Accept(*this);
   in_write_statement = false;
   emit(", ");
+  auto ty_rhs = TypeOf(rhs);
+  if (c_dtype(ty_lhs.dtype) != c_dtype(ty_rhs.dtype)) {
+    emit(c_dtype(ty_lhs.dtype));
+  }
   rhs->Accept(*this);
   if (IsVector(rhs)) {
     emit("(0)");
@@ -366,7 +360,7 @@ void Emit::Visit(const sem::StoreStmt& n) {
   auto rhs_int_const = std::dynamic_pointer_cast<sem::IntConst>(n.rhs);
   if (is_lhs_global && rhs_int_const) {
     emitTab();
-    emit("write_single_atomic_uint(");
+    emit("_write_atomic_single_dword(");
     in_write_statement = true;
     write_type = ty_lhs;
     n.lhs->Accept(*this);
