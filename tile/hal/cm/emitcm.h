@@ -50,20 +50,18 @@ class Emit : public lang::EmitC {
   TravelVisitor tv;
 
  private:
+  void CheckValidType(const sem::Type& ty);
+  sem::Type TypeOf(const sem::ExprPtr& expr);
+  sem::Type TypeOf(const sem::LValPtr& lvalue);
   bool IsVector(const sem::ExprPtr p);
   bool IsVector(const sem::LValPtr p);
   bool IsVector(const sem::LValue& v);
   std::string GetGlobalVarWithOffset(const sem::LValPtr p);
   std::string GetGlobalVarWithOffset(const sem::LValue& v);
-
-  void CheckValidType(const sem::Type& ty);
-  sem::Type TypeOf(const sem::ExprPtr& expr);
-  sem::Type TypeOf(const sem::LValPtr& lvalue);
-
-  void emitVector(const sem::Type& type, const std::string& size, const std::string& name);
-  void emitVector(const std::string& type, const std::string& size, const std::string& name);
-
+  void EmitVector(const sem::Type& type, const std::string& size, const std::string& name);
+  void EmitVector(const std::string& type, const std::string& size, const std::string& name);
   std::map<std::shared_ptr<sem::LoadExpr>, std::string> GetGlobalLoadExprMap(const sem::ExprPtr p);
+
   void SingleElementWrite(sem::LValPtr lhs, sem::ExprPtr rhs);
   void assign_global_var_to_temp(const sem::ExprPtr& e);
 

@@ -120,15 +120,12 @@ void Emit::Visit(const sem::LoadExpr& n) {
 }
 
 void Emit::assign_global_var_to_temp(const sem::ExprPtr& e) {
-  // auto result_map = GetGlobalLoadExprMap(e);
-  tv.InitGlobalLoadExprMap();
-  e->Accept(tv);
-  auto result_map = tv.GetGlobalLoadExprMap();
+  auto result_map = GetGlobalLoadExprMap(e);
   for (auto result : result_map) {
     std::string temp_val = "cm_temp" + std::to_string(temp_var_num);
     temp_var_num++;
     auto type = TypeOf(result.first->inner);
-    emitVector(type, vector_size, temp_val);
+    EmitVector(type, vector_size, temp_val);
     emit(";\n");
 
     auto s = GetGlobalVarWithOffset(result.first->inner);
@@ -235,20 +232,6 @@ void Emit::SingleElementWrite(sem::LValPtr lhs, sem::ExprPtr rhs) {
   emit(");\n");
 }
 
-std::string Emit::GetLValueName(const sem::LValPtr& lv) {
-  auto lookup = std::dynamic_pointer_cast<sem::LookupLVal>(lv);
-  if (lookup) {
-    return lookup->name;
-  }
-
-  auto subscript = std::dynamic_pointer_cast<sem::SubscriptLVal>(lv);
-  if (subscript) {
-    return GetLValueName(subscript->ptr);
-  }
-
-  throw error::Unimplemented{"GetLValueName: Not Supported LValue"};
-}
-
 void Emit::Visit(const sem::StoreStmt& n) {
   auto ty_lhs = TypeOf(n.lhs);
 
@@ -298,7 +281,7 @@ void Emit::Visit(const sem::StoreStmt& n) {
 
       std::string temp_var = "cm_temp" + std::to_string(temp_var_num);
       temp_var_num++;
-      emitVector(ty_lhs, vector_size, temp_var);
+      EmitVector(ty_lhs, vector_size, temp_var);
       emit(";\n");
 
       emitTab();
@@ -429,7 +412,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
       }
       emit("\n");
 
-      int stride = CalculateLocalIndexStride(n.init);
+      int stride = GetLocalIndexStride(n.init);
       local_index_stride_map[n.name] = stride;
 
       if (stride > 1) {
@@ -481,7 +464,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
         in_declare_stmt = false;
         return;
       }
-      emitVector(ty, vector_size, n.name);
+      EmitVector(ty, vector_size, n.name);
       emit(";\n");
 
       if (GetGlobalVarWithOffset(load_exp->inner).size() > 0) {
@@ -510,7 +493,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
     if (cast_exp) {
       auto load_exp = std::dynamic_pointer_cast<sem::LoadExpr>(cast_exp->val);
       if (load_exp) {
-        emitVector(ty, vector_size, n.name);
+        EmitVector(ty, vector_size, n.name);
         emit(" = ");
         load_exp->Accept(*this);
         emit(";\n");
@@ -524,7 +507,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
     auto cond_exp = std::dynamic_pointer_cast<sem::CondExpr>(n.init);
     if (cond_exp) {
       if (IsVector(cond_exp->tcase) || IsVector(cond_exp->fcase) || IsVector(cond_exp->cond)) {
-        emitVector(ty, vector_size, n.name);
+        EmitVector(ty, vector_size, n.name);
         emit(";\n");
 
         emitTab();
@@ -554,7 +537,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
     auto select_exp = std::dynamic_pointer_cast<sem::SelectExpr>(n.init);
     if (select_exp) {
       if (IsVector(cond_exp->tcase) || IsVector(cond_exp->fcase) || IsVector(cond_exp->cond)) {
-        emitVector(ty, vector_size, n.name);
+        EmitVector(ty, vector_size, n.name);
         emit(";\n");
 
         emitTab();
@@ -586,11 +569,11 @@ void Emit::Visit(const sem::DeclareStmt& n) {
       if (IsVector(binary_exp->lhs) || IsVector(binary_exp->rhs)) {
         if (binary_exp->op == ">" || binary_exp->op == "<" || binary_exp->op == ">=" || binary_exp->op == "<=" ||
             binary_exp->op == "==" || binary_exp->op == "!=") {
-          emitVector("char", vector_size, n.name);
+          EmitVector("char", vector_size, n.name);
           ty.dtype = DataType::INT8;
           scope_->Bind(n.name, ty);
         } else {
-          emitVector(ty, vector_size, n.name);
+          EmitVector(ty, vector_size, n.name);
           scope_->Bind(n.name, ty);
         }
 
@@ -608,7 +591,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
     if (call_expr) {
       for (auto val : call_expr->vals) {
         if (IsVector(val)) {
-          emitVector(ty, vector_size, n.name);
+          EmitVector(ty, vector_size, n.name);
           emit(" = ");
 
           call_expr->Accept(*this);
@@ -623,7 +606,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
 
     auto unary_expr = std::dynamic_pointer_cast<sem::UnaryExpr>(n.init);
     if (unary_expr && IsVector(unary_expr)) {
-      emitVector(ty, vector_size, n.name);
+      EmitVector(ty, vector_size, n.name);
       emit(" = ");
 
       unary_expr->Accept(*this);
@@ -638,10 +621,10 @@ void Emit::Visit(const sem::DeclareStmt& n) {
   if (n.type.array) {
     if (n.type.array >= 128) {
       large_sparse_vactor.insert(n.name);
-      emitVector(ty, std::to_string(n.type.array), n.name);
+      EmitVector(ty, std::to_string(n.type.array), n.name);
       // throw std::runtime_error("cm vector exceeds maximum supported size");
     } else {
-      emitVector(ty, std::to_string(n.type.array) + " * " + vector_size, n.name);
+      EmitVector(ty, std::to_string(n.type.array) + " * " + vector_size, n.name);
     }
     emit(" = ");
     if (n.init) {
@@ -940,19 +923,6 @@ void Emit::Visit(const sem::Function& n) {
   scope_ = nullptr;
 }
 
-void Emit::CheckValidType(const sem::Type& ty) {
-  if (ty.base == sem::Type::TVOID || ty.base == sem::Type::INDEX) {
-    return;
-  }
-  if (ty.dtype == DataType::FLOAT64) {
-    throw error::Unimplemented{"The device does not support 64-bit floating-point types"};
-  }
-}
-
-sem::Type Emit::TypeOf(const sem::ExprPtr& expr) { return lang::ExprType::TypeOf(scope_, false, true, expr); }
-
-sem::Type Emit::TypeOf(const sem::LValPtr& lvalue) { return lang::ExprType::TypeOf(scope_, false, true, lvalue); }
-
 bool Emit::depend_on_local_id(sem::ExprPtr init) {
   auto index_expr = std::dynamic_pointer_cast<sem::IndexExpr>(init);
   if (index_expr) {
@@ -979,7 +949,7 @@ bool Emit::depend_on_local_id(sem::ExprPtr init) {
   return false;
 }
 
-int Emit::CalculateLocalIndexStride(const sem::ExprPtr p) {
+int Emit::GetLocalIndexStride(const sem::ExprPtr p) {
   auto binary_expr = std::dynamic_pointer_cast<sem::BinaryExpr>(p);
   if (binary_expr) {
     if (!binary_expr->op.compare("/")) {
@@ -991,10 +961,10 @@ int Emit::CalculateLocalIndexStride(const sem::ExprPtr p) {
       auto int_const = std::dynamic_pointer_cast<sem::IntConst>(binary_expr->lhs);
       auto load_expr = std::dynamic_pointer_cast<sem::LoadExpr>(binary_expr->rhs);
       if (int_const && load_expr) {
-        return int_const->value * CalculateLocalIndexStride(load_expr);
+        return int_const->value * GetLocalIndexStride(load_expr);
       }
     }
-    return std::max(CalculateLocalIndexStride(binary_expr->lhs), CalculateLocalIndexStride(binary_expr->rhs));
+    return std::max(GetLocalIndexStride(binary_expr->lhs), GetLocalIndexStride(binary_expr->rhs));
   }
   auto is_load_expr = std::dynamic_pointer_cast<sem::LoadExpr>(p);
   if (is_load_expr) {
@@ -1017,29 +987,32 @@ int Emit::GetLocalIndexStride(const sem::LValPtr p) {
   return 0;
 }
 
-int Emit::GetLocalIndexStride(const sem::ExprPtr p) {
-  auto binary_expr = std::dynamic_pointer_cast<sem::BinaryExpr>(p);
-  if (binary_expr) {
-    return std::max(CalculateLocalIndexStride(binary_expr->lhs), CalculateLocalIndexStride(binary_expr->rhs));
+std::string Emit::GetLValueName(const sem::LValPtr& p) {
+  auto pval = std::dynamic_pointer_cast<sem::LookupLVal>(p);
+  if (pval) {
+    return pval->name;
   }
-  auto is_load_expr = std::dynamic_pointer_cast<sem::LoadExpr>(p);
-  if (is_load_expr) {
-    return GetLocalIndexStride(is_load_expr->inner);
+
+  auto psval = std::dynamic_pointer_cast<sem::SubscriptLVal>(p);
+  if (psval) {
+    return GetLValueName(psval->ptr);
   }
-  return 0;
+
+  throw error::Unimplemented{"GetLValueName: Not Supported LValue"};
 }
 
-std::string Emit::GetGlobalVarWithOffset(const sem::LValPtr p) {
-  tv.InitGlobalVarWithOffset();
-  p->Accept(tv);
-  return tv.GetGlobalVarWithOffset();
+void Emit::CheckValidType(const sem::Type& ty) {
+  if (ty.base == sem::Type::TVOID || ty.base == sem::Type::INDEX) {
+    return;
+  }
+  if (ty.dtype == DataType::FLOAT64) {
+    throw error::Unimplemented{"The device does not support 64-bit floating-point types"};
+  }
 }
 
-std::string Emit::GetGlobalVarWithOffset(const sem::LValue& v) {
-  tv.InitGlobalVarWithOffset();
-  v.Accept(tv);
-  return tv.GetGlobalVarWithOffset();
-}
+sem::Type Emit::TypeOf(const sem::ExprPtr& p) { return lang::ExprType::TypeOf(scope_, false, true, p); }
+
+sem::Type Emit::TypeOf(const sem::LValPtr& p) { return lang::ExprType::TypeOf(scope_, false, true, p); }
 
 bool Emit::IsVector(const sem::ExprPtr p) {
   tv.InitCheckVector();
@@ -1059,7 +1032,25 @@ bool Emit::IsVector(const sem::LValue& v) {
   return tv.CheckVector();
 }
 
-void Emit::emitVector(const sem::Type& type, const std::string& size, const std::string& name) {
+std::string Emit::GetGlobalVarWithOffset(const sem::LValPtr p) {
+  tv.InitGlobalVarWithOffset();
+  p->Accept(tv);
+  return tv.GetGlobalVarWithOffset();
+}
+
+std::string Emit::GetGlobalVarWithOffset(const sem::LValue& v) {
+  tv.InitGlobalVarWithOffset();
+  v.Accept(tv);
+  return tv.GetGlobalVarWithOffset();
+}
+
+std::map<std::shared_ptr<sem::LoadExpr>, std::string> Emit::GetGlobalLoadExprMap(const sem::ExprPtr p) {
+  tv.InitGlobalLoadExprMap();
+  p->Accept(tv);
+  return tv.GetGlobalLoadExprMap();
+}
+
+void Emit::EmitVector(const sem::Type& type, const std::string& size, const std::string& name) {
   emitTab();
   emit("vector<");
   emitType(type);
@@ -1070,7 +1061,7 @@ void Emit::emitVector(const sem::Type& type, const std::string& size, const std:
   tv.vector_params.insert(name);
 }
 
-void Emit::emitVector(const std::string& type, const std::string& size, const std::string& name) {
+void Emit::EmitVector(const std::string& type, const std::string& size, const std::string& name) {
   emitTab();
   emit("vector<");
   emit(type);
