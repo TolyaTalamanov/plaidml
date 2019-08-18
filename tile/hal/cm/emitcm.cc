@@ -61,17 +61,6 @@ void Emit::Visit(const sem::SubscriptLVal& n) {
   }
   n.ptr->Accept(*this);
   auto is_lookup_lval = std::dynamic_pointer_cast<sem::LookupLVal>(n.ptr);
-  if (is_lookup_lval && !in_read_statement &&
-      independent_vector.find(is_lookup_lval->name) != independent_vector.end()) {
-    emit("(");
-    n.offset->Accept(*this);
-    if (large_sparse_vactor.find(is_lookup_lval->name) == large_sparse_vactor.end()) {
-      emit(" * ");
-      emit(vector_size);
-    }
-    emit(")");
-    return;
-  }
 
   if (in_read_statement || vector_stride_map.find(GetLValueName(n.ptr)) == vector_stride_map.end() ||
       vector_stride_map[GetLValueName(n.ptr)] >= 1) {
@@ -194,7 +183,7 @@ inline std::string c_dtype(const DataType& dt) {
   return base;
 }
 
-void Emit::SingleElementWrite(sem::LValPtr lhs, sem::ExprPtr rhs) {
+void Emit::SingleElementWrite(const sem::LValPtr& lhs, const sem::ExprPtr& rhs) {
   emitTab();
   auto ty_lhs = TypeOf(lhs);
   switch (ty_lhs.dtype) {
@@ -404,7 +393,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
     if (ty.base == sem::Type::INDEX) {
       emit("// map=");
 
-      for (auto r : local_index_stride_map) {
+      for (auto r : tv.index_stride_map) {
         emit(r.first);
         emit(": ");
         emit(std::to_string(r.second));
@@ -413,7 +402,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
       emit("\n");
 
       int stride = GetLocalIndexStride(n.init);
-      local_index_stride_map[n.name] = stride;
+      tv.index_stride_map[n.name] = stride;
 
       if (stride > 1) {
         std::string vname = "element_offset_" + std::to_string(stride);
@@ -923,7 +912,7 @@ void Emit::Visit(const sem::Function& n) {
   scope_ = nullptr;
 }
 
-bool Emit::depend_on_local_id(sem::ExprPtr init) {
+bool Emit::depend_on_local_id(const sem::ExprPtr& init) {
   auto index_expr = std::dynamic_pointer_cast<sem::IndexExpr>(init);
   if (index_expr) {
     return (index_expr->type == sem::IndexExpr::GLOBAL || index_expr->type == sem::IndexExpr::LOCAL);
@@ -947,44 +936,6 @@ bool Emit::depend_on_local_id(sem::ExprPtr init) {
     if (lookup_lval && (dependent_index.find(lookup_lval->name) != dependent_index.end())) return true;
   }
   return false;
-}
-
-int Emit::GetLocalIndexStride(const sem::ExprPtr p) {
-  auto binary_expr = std::dynamic_pointer_cast<sem::BinaryExpr>(p);
-  if (binary_expr) {
-    if (!binary_expr->op.compare("/")) {
-      auto index_expr = std::dynamic_pointer_cast<sem::IndexExpr>(binary_expr->lhs);
-      auto int_const = std::dynamic_pointer_cast<sem::IntConst>(binary_expr->rhs);
-      if (index_expr && index_expr->type == sem::IndexExpr::LOCAL && int_const && int_const->value == 1) return 1;
-    }
-    if (!binary_expr->op.compare("*")) {
-      auto int_const = std::dynamic_pointer_cast<sem::IntConst>(binary_expr->lhs);
-      auto load_expr = std::dynamic_pointer_cast<sem::LoadExpr>(binary_expr->rhs);
-      if (int_const && load_expr) {
-        return int_const->value * GetLocalIndexStride(load_expr);
-      }
-    }
-    return std::max(GetLocalIndexStride(binary_expr->lhs), GetLocalIndexStride(binary_expr->rhs));
-  }
-  auto is_load_expr = std::dynamic_pointer_cast<sem::LoadExpr>(p);
-  if (is_load_expr) {
-    return GetLocalIndexStride(is_load_expr->inner);
-  }
-
-  return 0;
-}
-
-int Emit::GetLocalIndexStride(const sem::LValPtr p) {
-  auto is_lookup_lval = std::dynamic_pointer_cast<sem::LookupLVal>(p);
-  if (is_lookup_lval) {
-    return local_index_stride_map[is_lookup_lval->name];
-  }
-  auto is_subscript_lval = std::dynamic_pointer_cast<sem::SubscriptLVal>(p);
-  if (is_subscript_lval) {
-    return GetLocalIndexStride(is_subscript_lval->offset);
-  }
-
-  return 0;
 }
 
 std::string Emit::GetLValueName(const sem::LValPtr& p) {
@@ -1014,13 +965,13 @@ sem::Type Emit::TypeOf(const sem::ExprPtr& p) { return lang::ExprType::TypeOf(sc
 
 sem::Type Emit::TypeOf(const sem::LValPtr& p) { return lang::ExprType::TypeOf(scope_, false, true, p); }
 
-bool Emit::IsVector(const sem::ExprPtr p) {
+bool Emit::IsVector(const sem::ExprPtr& p) {
   tv.InitCheckVector();
   p->Accept(tv);
   return tv.CheckVector();
 }
 
-bool Emit::IsVector(const sem::LValPtr p) {
+bool Emit::IsVector(const sem::LValPtr& p) {
   tv.InitCheckVector();
   p->Accept(tv);
   return tv.CheckVector();
@@ -1032,7 +983,19 @@ bool Emit::IsVector(const sem::LValue& v) {
   return tv.CheckVector();
 }
 
-std::string Emit::GetGlobalVarWithOffset(const sem::LValPtr p) {
+int Emit::GetLocalIndexStride(const sem::ExprPtr& p) {
+  tv.InitIndexStride();
+  p->Accept(tv);
+  return tv.GetIndexStride();
+}
+
+int Emit::GetLocalIndexStride(const sem::LValPtr& p) {
+  tv.InitIndexStride();
+  p->Accept(tv);
+  return tv.GetIndexStride();
+}
+
+std::string Emit::GetGlobalVarWithOffset(const sem::LValPtr& p) {
   tv.InitGlobalVarWithOffset();
   p->Accept(tv);
   return tv.GetGlobalVarWithOffset();
@@ -1044,7 +1007,7 @@ std::string Emit::GetGlobalVarWithOffset(const sem::LValue& v) {
   return tv.GetGlobalVarWithOffset();
 }
 
-std::map<std::shared_ptr<sem::LoadExpr>, std::string> Emit::GetGlobalLoadExprMap(const sem::ExprPtr p) {
+std::map<std::shared_ptr<sem::LoadExpr>, std::string> Emit::GetGlobalLoadExprMap(const sem::ExprPtr& p) {
   tv.InitGlobalLoadExprMap();
   p->Accept(tv);
   return tv.GetGlobalLoadExprMap();

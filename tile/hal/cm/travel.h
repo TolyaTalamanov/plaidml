@@ -18,7 +18,7 @@ namespace cm {
 
 class TravelVisitor : public sem::Visitor {
  public:
-  enum TravelType { CHECK_CM_VECTOR, GET_STRING, GET_GLOBAL_LOAD_EXPRS, GET_GLOBAL_VAR_WITH_OFFSET };
+  enum TravelType { CHECK_CM_VECTOR, GET_STRING, GET_GLOBAL_LOAD_EXPRS, GET_GLOBAL_VAR_WITH_OFFSET, GET_INDEX_STRIDE };
 
   void Visit(const sem::IntConst& node) override;
   void Visit(const sem::FloatConst& node) override;
@@ -50,6 +50,11 @@ class TravelVisitor : public sem::Visitor {
     is_cm_vector = false;
   }
 
+  void InitIndexStride() {
+    travel = GET_INDEX_STRIDE;
+    index_stride = 0;
+  }
+
   void InitNodeStr() {
     travel = GET_STRING;
     node_str.str("");
@@ -66,16 +71,19 @@ class TravelVisitor : public sem::Visitor {
   }
 
   bool CheckVector() const { return is_cm_vector; }
+  int GetIndexStride() const { return index_stride; }
   std::string GetNodeStr() const { return node_str.str(); }
   std::string GetGlobalVarWithOffset() const { return global_var_with_offset.str(); }
   std::map<std::shared_ptr<sem::LoadExpr>, std::string> GetGlobalLoadExprMap() const { return global_load_exprs; }
 
   std::set<std::string> global_params;
   std::set<std::string> vector_params;
+  std::map<std::string, int> index_stride_map;
 
  private:
   TravelType travel;
   bool is_cm_vector;
+  int index_stride;
   std::ostringstream node_str;
   std::ostringstream global_var_with_offset;
   std::map<std::shared_ptr<sem::LoadExpr>, std::string> global_load_exprs;

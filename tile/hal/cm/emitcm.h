@@ -53,28 +53,25 @@ class Emit : public lang::EmitC {
   void CheckValidType(const sem::Type& ty);
   sem::Type TypeOf(const sem::ExprPtr& expr);
   sem::Type TypeOf(const sem::LValPtr& lvalue);
-  bool IsVector(const sem::ExprPtr p);
-  bool IsVector(const sem::LValPtr p);
+  bool IsVector(const sem::ExprPtr& p);
+  bool IsVector(const sem::LValPtr& p);
   bool IsVector(const sem::LValue& v);
-  std::string GetGlobalVarWithOffset(const sem::LValPtr p);
+  int GetLocalIndexStride(const sem::LValPtr& p);
+  int GetLocalIndexStride(const sem::ExprPtr& p);
+  std::string GetGlobalVarWithOffset(const sem::LValPtr& p);
   std::string GetGlobalVarWithOffset(const sem::LValue& v);
   void EmitVector(const sem::Type& type, const std::string& size, const std::string& name);
   void EmitVector(const std::string& type, const std::string& size, const std::string& name);
-  std::map<std::shared_ptr<sem::LoadExpr>, std::string> GetGlobalLoadExprMap(const sem::ExprPtr p);
+  std::map<std::shared_ptr<sem::LoadExpr>, std::string> GetGlobalLoadExprMap(const sem::ExprPtr& p);
 
-  void SingleElementWrite(sem::LValPtr lhs, sem::ExprPtr rhs);
+  void SingleElementWrite(const sem::LValPtr& lhs, const sem::ExprPtr& rhs);
   void assign_global_var_to_temp(const sem::ExprPtr& e);
 
   std::string GetLValueName(const sem::LValPtr& lv);
   std::map<std::string, int> vector_stride_map;
-
-  int CalculateLocalIndexStride(const sem::ExprPtr p);
-  int GetLocalIndexStride(const sem::LValPtr p);
-  int GetLocalIndexStride(const sem::ExprPtr p);
-  std::map<std::string, int> local_index_stride_map;
   std::set<std::string> element_offset_vector;
 
-  bool depend_on_local_id(sem::ExprPtr init);
+  bool depend_on_local_id(const sem::ExprPtr& init);
 
   lang::Scope<sem::Type>* scope_;
   bool is_sub_group_broadcast_first_val = false;
@@ -86,7 +83,6 @@ class Emit : public lang::EmitC {
   int temp_var_num = 0;
   std::map<std::string, std::string> input_replace_map;
   std::set<std::string> dependent_index;
-  std::set<std::string> independent_vector;
   std::set<std::string> large_sparse_vactor;
   lang::KernelInfo ki_;
 };

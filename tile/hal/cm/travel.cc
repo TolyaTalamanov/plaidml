@@ -36,6 +36,10 @@ void TravelVisitor::Visit(const sem::LookupLVal& node) {
     }
     return;
   }
+  if (travel == GET_INDEX_STRIDE) {
+    index_stride = index_stride_map[node.name];
+    return;
+  }
 
   if (travel == GET_GLOBAL_VAR_WITH_OFFSET) {
     if (global_params.find(node.name) != global_params.end()) {
@@ -57,6 +61,11 @@ void TravelVisitor::Visit(const sem::SubscriptLVal& node) {
 
   if (travel == CHECK_CM_VECTOR) {
     if (node.ptr) node.ptr->Accept(*this);
+    return;
+  }
+
+  if (travel == GET_INDEX_STRIDE) {
+    if (node.offset) node.offset->Accept(*this);
     return;
   }
 
@@ -83,6 +92,11 @@ void TravelVisitor::Visit(const sem::LoadExpr& node) {
   }
 
   if (travel == CHECK_CM_VECTOR) {
+    if (node.inner) node.inner->Accept(*this);
+    return;
+  }
+
+  if (travel == GET_INDEX_STRIDE) {
     if (node.inner) node.inner->Accept(*this);
     return;
   }
@@ -149,6 +163,34 @@ void TravelVisitor::Visit(const sem::BinaryExpr& node) {
   if (travel == GET_GLOBAL_LOAD_EXPRS) {
     if (node.lhs) node.lhs->Accept(*this);
     if (node.rhs) node.rhs->Accept(*this);
+    return;
+  }
+  if (travel == GET_INDEX_STRIDE) {
+    if (!node.op.compare("/")) {
+      auto index_expr = std::dynamic_pointer_cast<sem::IndexExpr>(node.lhs);
+      auto int_const = std::dynamic_pointer_cast<sem::IntConst>(node.rhs);
+      if (index_expr && index_expr->type == sem::IndexExpr::LOCAL && int_const && int_const->value == 1) {
+        index_stride = 1;
+        return;
+      }
+    }
+    if (!node.op.compare("*")) {
+      auto int_const = std::dynamic_pointer_cast<sem::IntConst>(node.lhs);
+      auto load_expr = std::dynamic_pointer_cast<sem::LoadExpr>(node.rhs);
+      if (int_const && load_expr) {
+        index_stride = 0;
+        load_expr->Accept(*this);
+        index_stride = int_const->value * index_stride;
+        return;
+      }
+    }
+    index_stride = 0;
+    node.lhs->Accept(*this);
+    auto l = index_stride;
+    index_stride = 0;
+    node.rhs->Accept(*this);
+    auto r = index_stride;
+    index_stride = std::max(l, r);
     return;
   }
 }
