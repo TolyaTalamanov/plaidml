@@ -56,7 +56,6 @@ class Emit : public lang::EmitC {
 
   void emitVector(const sem::Type& type, const std::string& size, const std::string& name);
   void emitVector(const std::string& type, const std::string& size, const std::string& name);
-  std::set<std::string> global_params_;
   std::set<std::string> vector_params_;
 
   std::map<std::shared_ptr<sem::LoadExpr>, std::string> GetGlobalLoadExprMap(const sem::ExprPtr p);

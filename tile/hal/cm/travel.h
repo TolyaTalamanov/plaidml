@@ -2,6 +2,9 @@
 
 #pragma once
 
+#include <map>
+#include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -15,7 +18,7 @@ namespace cm {
 
 class TravelVisitor : public sem::Visitor {
  public:
-  enum TravelType { GET_STRING };
+  enum TravelType { GET_STRING, GET_GLOBAL_LOAD_EXPRS, GET_GLOBAL_VAR_WITH_OFFSET };
 
   void Visit(const sem::IntConst& node) override;
   void Visit(const sem::FloatConst& node) override;
@@ -42,15 +45,32 @@ class TravelVisitor : public sem::Visitor {
   void Visit(const sem::SpecialStmt& node) override;
   void Visit(const sem::Function& node) override;
 
-  void init_node_str() {
+  void InitNodeStr() {
     travel = GET_STRING;
     node_str.str("");
   }
-  std::string get_node_str() const { return node_str.str(); }
+
+  void InitGlobalVarWithOffset() {
+    travel = GET_GLOBAL_VAR_WITH_OFFSET;
+    global_var_with_offset.str("");
+  }
+
+  void InitGlobalLoadExprMap() {
+    travel = GET_GLOBAL_LOAD_EXPRS;
+    global_load_exprs.clear();
+  }
+
+  std::string GetNodeStr() const { return node_str.str(); }
+  std::string GetGlobalVarWithOffset() const { return global_var_with_offset.str(); }
+  std::map<std::shared_ptr<sem::LoadExpr>, std::string> GetGlobalLoadExprMap() const { return global_load_exprs; }
+
+  std::set<std::string> global_params;
 
  private:
   TravelType travel;
   std::ostringstream node_str;
+  std::ostringstream global_var_with_offset;
+  std::map<std::shared_ptr<sem::LoadExpr>, std::string> global_load_exprs;
 };
 
 }  // namespace cm

@@ -120,9 +120,11 @@ void Emit::Visit(const sem::LoadExpr& n) {
 }
 
 void Emit::assign_global_var_to_temp(const sem::ExprPtr& e) {
-  auto result_map = GetGlobalLoadExprMap(e);
+  // auto result_map = GetGlobalLoadExprMap(e);
+  tv.InitGlobalLoadExprMap();
+  e->Accept(tv);
+  auto result_map = tv.GetGlobalLoadExprMap();
   for (auto result : result_map) {
-    emit("//" + result.second + "\n");
     std::string temp_val = "cm_temp" + std::to_string(temp_var_num);
     temp_var_num++;
     auto type = TypeOf(result.first->inner);
@@ -879,7 +881,7 @@ void Emit::Visit(const sem::Function& n) {
     }
     CheckValidType(ty);
     scope.Bind(p.second, ty);
-    global_params_.insert(p.second);
+    tv.global_params.insert(p.second);
     vector_params_.insert(p.second);
   }
 
@@ -951,7 +953,6 @@ sem::Type Emit::TypeOf(const sem::ExprPtr& expr) { return lang::ExprType::TypeOf
 
 sem::Type Emit::TypeOf(const sem::LValPtr& lvalue) { return lang::ExprType::TypeOf(scope_, false, true, lvalue); }
 
-// type is sem::Type
 void Emit::emitVector(const sem::Type& type, const std::string& size, const std::string& name) {
   emitTab();
   emit("vector<");
@@ -963,7 +964,6 @@ void Emit::emitVector(const sem::Type& type, const std::string& size, const std:
   vector_params_.insert(name);
 }
 
-// type is std::string
 void Emit::emitVector(const std::string& type, const std::string& size, const std::string& name) {
   emitTab();
   emit("vector<");
@@ -1001,98 +1001,22 @@ bool Emit::depend_on_local_id(sem::ExprPtr init) {
   return false;
 }
 
-std::map<std::shared_ptr<sem::LoadExpr>, std::string> Emit::GetGlobalLoadExprMap(const sem::ExprPtr p) {
-  std::map<std::shared_ptr<sem::LoadExpr>, std::string> result;
-
-  auto is_cond_expr = std::dynamic_pointer_cast<sem::CondExpr>(p);
-  if (is_cond_expr) {
-    auto rcd = GetGlobalLoadExprMap(is_cond_expr->cond);
-    result.insert(rcd.begin(), rcd.end());
-    auto rt = GetGlobalLoadExprMap(is_cond_expr->tcase);
-    result.insert(rt.begin(), rt.end());
-    auto rf = GetGlobalLoadExprMap(is_cond_expr->fcase);
-    result.insert(rf.begin(), rf.end());
-    return result;
-  }
-
-  auto is_cast_expr = std::dynamic_pointer_cast<sem::CastExpr>(p);
-  if (is_cast_expr) {
-    return GetGlobalLoadExprMap(is_cast_expr->val);
-  }
-
-  auto is_binary_expr = std::dynamic_pointer_cast<sem::BinaryExpr>(p);
-  if (is_binary_expr) {
-    auto rl = GetGlobalLoadExprMap(is_binary_expr->lhs);
-    result.insert(rl.begin(), rl.end());
-    auto rr = GetGlobalLoadExprMap(is_binary_expr->rhs);
-    result.insert(rr.begin(), rr.end());
-    return result;
-  }
-
-  auto is_clamp_expr = std::dynamic_pointer_cast<sem::ClampExpr>(p);
-  if (is_clamp_expr) {
-    auto r_val = GetGlobalLoadExprMap(is_clamp_expr->val);
-    result.insert(r_val.begin(), r_val.end());
-    auto r_min = GetGlobalLoadExprMap(is_clamp_expr->min);
-    result.insert(r_min.begin(), r_min.end());
-    auto r_max = GetGlobalLoadExprMap(is_clamp_expr->max);
-    result.insert(r_max.begin(), r_max.end());
-    return result;
-  }
-
-  auto is_load_expr = std::dynamic_pointer_cast<sem::LoadExpr>(p);
-  if (is_load_expr) {
-    auto subscript_lval = std::dynamic_pointer_cast<sem::SubscriptLVal>(is_load_expr->inner);
-    if (subscript_lval) {
-      auto s = GetGlobalVarWithOffset(subscript_lval);
-      if (s.length() > 0) {
-        result[is_load_expr] = s;
-      }
-      return result;
-    }
-
-    auto s = GetGlobalVarWithOffset(is_load_expr->inner);
-    if (s.length() > 0) {
-      result[is_load_expr] = s;
-    }
-  }
-
-  auto is_call_expr = std::dynamic_pointer_cast<sem::CallExpr>(p);
-  if (is_call_expr) {
-    for (size_t i = 0; i < is_call_expr->vals.size(); i++) {
-      auto r = GetGlobalLoadExprMap(is_call_expr->vals[i]);
-      result.insert(r.begin(), r.end());
-      emit("//");
-      emit(std::to_string(r.size()));
-      emit("\n");
-    }
-  }
-
-  return result;
-}
 std::string Emit::GetGlobalVarWithOffset(const sem::LValPtr p) {
-  auto is_lookup_lval = std::dynamic_pointer_cast<sem::LookupLVal>(p);
-  if (is_lookup_lval) return GetGlobalVarWithOffset(*is_lookup_lval);
-  auto is_subscript_lval = std::dynamic_pointer_cast<sem::SubscriptLVal>(p);
-  if (is_subscript_lval) return GetGlobalVarWithOffset(*is_subscript_lval);
-  return "";
+  tv.InitGlobalVarWithOffset();
+  p->Accept(tv);
+  return tv.GetGlobalVarWithOffset();
 }
+
 std::string Emit::GetGlobalVarWithOffset(const sem::LookupLVal& v) {
-  if (global_params_.find(v.name) != global_params_.end()) {
-    return v.name;
-  }
-  return "";
+  tv.InitGlobalVarWithOffset();
+  v.Accept(tv);
+  return tv.GetGlobalVarWithOffset();
 }
 
 std::string Emit::GetGlobalVarWithOffset(const sem::SubscriptLVal& v) {
-  auto s = GetGlobalVarWithOffset(v.ptr);
-  if (s.size() > 0) {
-    tv.init_node_str();
-    v.offset->Accept(tv);
-    auto node_str = tv.get_node_str();
-    return s + " " + node_str;
-  }
-  return "";
+  tv.InitGlobalVarWithOffset();
+  v.Accept(tv);
+  return tv.GetGlobalVarWithOffset();
 }
 
 bool Emit::IsVector(const sem::ExprPtr p) {

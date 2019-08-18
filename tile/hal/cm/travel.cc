@@ -30,6 +30,12 @@ void TravelVisitor::Visit(const sem::LookupLVal& node) {
     node_str << node.name;
     return;
   }
+  if (travel == GET_GLOBAL_VAR_WITH_OFFSET) {
+    if (global_params.find(node.name) != global_params.end()) {
+      global_var_with_offset << node.name;
+    }
+    return;
+  }
 }
 
 void TravelVisitor::Visit(const sem::SubscriptLVal& node) {
@@ -41,11 +47,38 @@ void TravelVisitor::Visit(const sem::SubscriptLVal& node) {
     node_str << "])";
     return;
   }
+  if (travel == GET_GLOBAL_VAR_WITH_OFFSET) {
+    node.ptr->Accept(*this);
+
+    auto s = GetGlobalVarWithOffset();
+    if (s.size() > 0) {
+      InitNodeStr();
+      node.offset->Accept(*this);
+      auto node_str = GetNodeStr();
+      global_var_with_offset << " " << node_str;
+
+      travel = GET_GLOBAL_VAR_WITH_OFFSET;
+    }
+    return;
+  }
 }
 
 void TravelVisitor::Visit(const sem::LoadExpr& node) {
   if (travel == GET_STRING) {
     if (node.inner) node.inner->Accept(*this);
+    return;
+  }
+
+  if (travel == GET_GLOBAL_LOAD_EXPRS) {
+    InitGlobalVarWithOffset();
+    if (node.inner) node.inner->Accept(*this);
+    auto s = GetGlobalVarWithOffset();
+
+    travel = GET_GLOBAL_LOAD_EXPRS;
+
+    if (s.length() > 0) {
+      global_load_exprs[std::make_shared<sem::LoadExpr>(node)] = s;
+    }
     return;
   }
 }
@@ -86,6 +119,12 @@ void TravelVisitor::Visit(const sem::BinaryExpr& node) {
     node_str << ")";
     return;
   }
+
+  if (travel == GET_GLOBAL_LOAD_EXPRS) {
+    if (node.lhs) node.lhs->Accept(*this);
+    if (node.rhs) node.rhs->Accept(*this);
+    return;
+  }
 }
 
 void TravelVisitor::Visit(const sem::CondExpr& node) {
@@ -97,6 +136,12 @@ void TravelVisitor::Visit(const sem::CondExpr& node) {
     node_str << " ";
     if (node.fcase) node.fcase->Accept(*this);
     node_str << ")";
+    return;
+  }
+  if (travel == GET_GLOBAL_LOAD_EXPRS) {
+    if (node.cond) node.cond->Accept(*this);
+    if (node.tcase) node.tcase->Accept(*this);
+    if (node.fcase) node.fcase->Accept(*this);
     return;
   }
 }
@@ -112,6 +157,12 @@ void TravelVisitor::Visit(const sem::SelectExpr& node) {
     node_str << ")";
     return;
   }
+  if (travel == GET_GLOBAL_LOAD_EXPRS) {
+    if (node.cond) node.cond->Accept(*this);
+    if (node.tcase) node.tcase->Accept(*this);
+    if (node.fcase) node.fcase->Accept(*this);
+    return;
+  }
 }
 
 void TravelVisitor::Visit(const sem::ClampExpr& node) {
@@ -125,10 +176,20 @@ void TravelVisitor::Visit(const sem::ClampExpr& node) {
     node_str << ")";
     return;
   }
+  if (travel == GET_GLOBAL_LOAD_EXPRS) {
+    if (node.val) node.val->Accept(*this);
+    if (node.min) node.min->Accept(*this);
+    if (node.max) node.max->Accept(*this);
+    return;
+  }
 }
 
 void TravelVisitor::Visit(const sem::CastExpr& node) {
   if (travel == GET_STRING) {
+    if (node.val) node.val->Accept(*this);
+    return;
+  }
+  if (travel == GET_GLOBAL_LOAD_EXPRS) {
     if (node.val) node.val->Accept(*this);
     return;
   }
@@ -144,6 +205,12 @@ void TravelVisitor::Visit(const sem::CallExpr& node) {
       }
     }
     node_str << ")";
+    return;
+  }
+  if (travel == GET_GLOBAL_LOAD_EXPRS) {
+    for (size_t i = 0; i < node.vals.size(); i++) {
+      if (node.vals[i]) node.vals[i]->Accept(*this);
+    }
     return;
   }
 }
