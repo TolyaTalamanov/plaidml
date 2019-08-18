@@ -24,7 +24,6 @@
 #include "base/util/uuid.h"
 #include "tile/hal/cm/emitcm.h"
 #include "tile/hal/cm/library.h"
-#include "tile/hal/cm/opt.h"
 #include "tile/hal/cm/runtime.h"
 #include "tile/lang/semprinter.h"
 
@@ -341,7 +340,6 @@ boost::future<std::unique_ptr<hal::Library>> Compiler::Build(const context::Cont
       kinfo.set_src("// Builtin zero kernel");
     } else if (!knames.count(ki.kfunc->name)) {
       knames.insert(ki.kfunc->name);
-      OptimizeKernel(ki, settings);
 
       auto pcm = std::make_shared<Emit>(ki);
 
