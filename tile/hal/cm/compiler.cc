@@ -366,15 +366,15 @@ boost::future<std::unique_ptr<hal::Library>> Compiler::Build(const context::Cont
 
       std::string cmd = "";
 
-      auto cmc_path = env::Get("PLAIDML_CM_COMPILER_PATH");
-      if (cmc_path.length()) {
-        cmd = cmc_path + " ";
+      auto cm_root = env::Get("CM_ROOT");
+      if (cm_root.length()) {
+        cmd = cm_root + "/compiler/bin/cmc ";
       } else {
-        throw std::runtime_error("PLAIDML_CM_COMPILER_PATH not specified!");
+        throw std::runtime_error("CM_ROOT is not specified!");
       }
 
       cmd += src_path.string();
-      cmd += " -march=GEN9 -isystem ../../compiler/include -o ";
+      cmd += " -march=GEN9 -isystem " + cm_root + "/compiler/include -o ";
       cmd += isa_path.string();
       auto check_err = system(cmd.c_str());
 
