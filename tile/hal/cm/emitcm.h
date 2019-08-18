@@ -45,7 +45,7 @@ class Emit : public lang::EmitC {
   std::string vector_size = "16";
 
   bool comments_contains_ident = false;
-  bool one_thread_mode = false;
+  bool one_eu_mode = false;
 
   TravelVisitor tv;
 
@@ -64,25 +64,20 @@ class Emit : public lang::EmitC {
   void EmitVector(const std::string& type, const std::string& size, const std::string& name);
   std::map<std::shared_ptr<sem::LoadExpr>, std::string> GetGlobalLoadExprMap(const sem::ExprPtr& p);
 
-  void SingleElementWrite(const sem::LValPtr& lhs, const sem::ExprPtr& rhs);
-  void assign_global_var_to_temp(const sem::ExprPtr& e);
-
   std::string GetLValueName(const sem::LValPtr& lv);
+  void SingleElementWrite(const sem::LValPtr& lhs, const sem::ExprPtr& rhs);
+  void AssignGlobalVarToTemp(const sem::ExprPtr& e);
+
   std::map<std::string, int> vector_stride_map;
   std::set<std::string> element_offset_vector;
-
-  bool depend_on_local_id(const sem::ExprPtr& init);
 
   lang::Scope<sem::Type>* scope_;
   bool is_sub_group_broadcast_first_val = false;
   bool in_read_statement = false;
   bool in_write_statement = false;
-  bool in_cmamp_function = false;
   sem::Type write_type;
-  bool in_declare_stmt = false;
   int temp_var_num = 0;
   std::map<std::string, std::string> input_replace_map;
-  std::set<std::string> dependent_index;
   std::set<std::string> large_sparse_vactor;
   lang::KernelInfo ki_;
 };
