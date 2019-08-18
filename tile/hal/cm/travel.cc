@@ -30,6 +30,13 @@ void TravelVisitor::Visit(const sem::LookupLVal& node) {
     node_str << node.name;
     return;
   }
+  if (travel == CHECK_CM_VECTOR) {
+    if (vector_params.find(node.name) != vector_params.end()) {
+      is_cm_vector = true;
+    }
+    return;
+  }
+
   if (travel == GET_GLOBAL_VAR_WITH_OFFSET) {
     if (global_params.find(node.name) != global_params.end()) {
       global_var_with_offset << node.name;
@@ -47,6 +54,12 @@ void TravelVisitor::Visit(const sem::SubscriptLVal& node) {
     node_str << "])";
     return;
   }
+
+  if (travel == CHECK_CM_VECTOR) {
+    if (node.ptr) node.ptr->Accept(*this);
+    return;
+  }
+
   if (travel == GET_GLOBAL_VAR_WITH_OFFSET) {
     node.ptr->Accept(*this);
 
@@ -65,6 +78,11 @@ void TravelVisitor::Visit(const sem::SubscriptLVal& node) {
 
 void TravelVisitor::Visit(const sem::LoadExpr& node) {
   if (travel == GET_STRING) {
+    if (node.inner) node.inner->Accept(*this);
+    return;
+  }
+
+  if (travel == CHECK_CM_VECTOR) {
     if (node.inner) node.inner->Accept(*this);
     return;
   }
@@ -108,6 +126,10 @@ void TravelVisitor::Visit(const sem::UnaryExpr& node) {
     if (node.inner) node.inner->Accept(*this);
     return;
   }
+  if (travel == CHECK_CM_VECTOR) {
+    if (node.inner) node.inner->Accept(*this);
+    return;
+  }
 }
 
 void TravelVisitor::Visit(const sem::BinaryExpr& node) {
@@ -119,7 +141,11 @@ void TravelVisitor::Visit(const sem::BinaryExpr& node) {
     node_str << ")";
     return;
   }
-
+  if (travel == CHECK_CM_VECTOR) {
+    if (node.lhs) node.lhs->Accept(*this);
+    if (node.rhs) node.rhs->Accept(*this);
+    return;
+  }
   if (travel == GET_GLOBAL_LOAD_EXPRS) {
     if (node.lhs) node.lhs->Accept(*this);
     if (node.rhs) node.rhs->Accept(*this);
@@ -136,6 +162,12 @@ void TravelVisitor::Visit(const sem::CondExpr& node) {
     node_str << " ";
     if (node.fcase) node.fcase->Accept(*this);
     node_str << ")";
+    return;
+  }
+  if (travel == CHECK_CM_VECTOR) {
+    if (node.cond) node.cond->Accept(*this);
+    if (node.tcase) node.tcase->Accept(*this);
+    if (node.fcase) node.fcase->Accept(*this);
     return;
   }
   if (travel == GET_GLOBAL_LOAD_EXPRS) {
@@ -155,6 +187,12 @@ void TravelVisitor::Visit(const sem::SelectExpr& node) {
     node_str << " ";
     if (node.fcase) node.fcase->Accept(*this);
     node_str << ")";
+    return;
+  }
+  if (travel == CHECK_CM_VECTOR) {
+    if (node.cond) node.cond->Accept(*this);
+    if (node.tcase) node.tcase->Accept(*this);
+    if (node.fcase) node.fcase->Accept(*this);
     return;
   }
   if (travel == GET_GLOBAL_LOAD_EXPRS) {
@@ -186,6 +224,10 @@ void TravelVisitor::Visit(const sem::ClampExpr& node) {
 
 void TravelVisitor::Visit(const sem::CastExpr& node) {
   if (travel == GET_STRING) {
+    if (node.val) node.val->Accept(*this);
+    return;
+  }
+  if (travel == CHECK_CM_VECTOR) {
     if (node.val) node.val->Accept(*this);
     return;
   }

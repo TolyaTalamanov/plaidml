@@ -50,25 +50,22 @@ class Emit : public lang::EmitC {
   TravelVisitor tv;
 
  private:
+  bool IsVector(const sem::ExprPtr p);
+  bool IsVector(const sem::LValPtr p);
+  bool IsVector(const sem::LValue& v);
+  std::string GetGlobalVarWithOffset(const sem::LValPtr p);
+  std::string GetGlobalVarWithOffset(const sem::LValue& v);
+
   void CheckValidType(const sem::Type& ty);
   sem::Type TypeOf(const sem::ExprPtr& expr);
   sem::Type TypeOf(const sem::LValPtr& lvalue);
 
   void emitVector(const sem::Type& type, const std::string& size, const std::string& name);
   void emitVector(const std::string& type, const std::string& size, const std::string& name);
-  std::set<std::string> vector_params_;
 
   std::map<std::shared_ptr<sem::LoadExpr>, std::string> GetGlobalLoadExprMap(const sem::ExprPtr p);
   void SingleElementWrite(sem::LValPtr lhs, sem::ExprPtr rhs);
   void assign_global_var_to_temp(const sem::ExprPtr& e);
-
-  std::string GetGlobalVarWithOffset(const sem::LValPtr p);
-  std::string GetGlobalVarWithOffset(const sem::LookupLVal& v);
-  std::string GetGlobalVarWithOffset(const sem::SubscriptLVal& v);
-
-  std::string GetGlobalVar(const sem::LValPtr p);
-  std::string GetGlobalVar(const sem::LookupLVal& v);
-  std::string GetGlobalVar(const sem::SubscriptLVal& v);
 
   std::string GetLValueName(const sem::LValPtr& lv);
   std::map<std::string, int> vector_stride_map;
@@ -79,10 +76,6 @@ class Emit : public lang::EmitC {
   std::map<std::string, int> local_index_stride_map;
   std::set<std::string> element_offset_vector;
 
-  bool IsVector(const sem::ExprPtr p);
-  bool IsVector(const sem::LValPtr p);
-  bool IsVector(const sem::LookupLVal& v);
-  bool IsVector(const sem::SubscriptLVal& v);
   bool depend_on_local_id(sem::ExprPtr init);
 
   lang::Scope<sem::Type>* scope_;

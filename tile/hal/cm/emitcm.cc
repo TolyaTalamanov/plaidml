@@ -96,7 +96,7 @@ void Emit::Visit(const sem::LoadExpr& n) {
     return;
   }
   auto inner = std::dynamic_pointer_cast<sem::SubscriptLVal>(n.inner);
-  if (inner && GetGlobalVarWithOffset(*inner).size() > 0) {
+  if (inner && GetGlobalVarWithOffset(inner).size() > 0) {
     if (!use_global_id) {
       int stride = GetLocalIndexStride(inner->offset);
       if (stride > 1) {
@@ -882,7 +882,7 @@ void Emit::Visit(const sem::Function& n) {
     CheckValidType(ty);
     scope.Bind(p.second, ty);
     tv.global_params.insert(p.second);
-    vector_params_.insert(p.second);
+    tv.vector_params.insert(p.second);
   }
 
   emitType(n.ret);
@@ -953,28 +953,6 @@ sem::Type Emit::TypeOf(const sem::ExprPtr& expr) { return lang::ExprType::TypeOf
 
 sem::Type Emit::TypeOf(const sem::LValPtr& lvalue) { return lang::ExprType::TypeOf(scope_, false, true, lvalue); }
 
-void Emit::emitVector(const sem::Type& type, const std::string& size, const std::string& name) {
-  emitTab();
-  emit("vector<");
-  emitType(type);
-  emit(",");
-  emit(size);
-  emit("> ");
-  emit(name);
-  vector_params_.insert(name);
-}
-
-void Emit::emitVector(const std::string& type, const std::string& size, const std::string& name) {
-  emitTab();
-  emit("vector<");
-  emit(type);
-  emit(",");
-  emit(size);
-  emit("> ");
-  emit(name);
-  vector_params_.insert(name);
-}
-
 bool Emit::depend_on_local_id(sem::ExprPtr init) {
   auto index_expr = std::dynamic_pointer_cast<sem::IndexExpr>(init);
   if (index_expr) {
@@ -1000,69 +978,6 @@ bool Emit::depend_on_local_id(sem::ExprPtr init) {
   }
   return false;
 }
-
-std::string Emit::GetGlobalVarWithOffset(const sem::LValPtr p) {
-  tv.InitGlobalVarWithOffset();
-  p->Accept(tv);
-  return tv.GetGlobalVarWithOffset();
-}
-
-std::string Emit::GetGlobalVarWithOffset(const sem::LookupLVal& v) {
-  tv.InitGlobalVarWithOffset();
-  v.Accept(tv);
-  return tv.GetGlobalVarWithOffset();
-}
-
-std::string Emit::GetGlobalVarWithOffset(const sem::SubscriptLVal& v) {
-  tv.InitGlobalVarWithOffset();
-  v.Accept(tv);
-  return tv.GetGlobalVarWithOffset();
-}
-
-bool Emit::IsVector(const sem::ExprPtr p) {
-  auto is_cast_expr = std::dynamic_pointer_cast<sem::CastExpr>(p);
-  if (is_cast_expr) {
-    return IsVector(is_cast_expr->val);
-  }
-
-  auto is_load_expr = std::dynamic_pointer_cast<sem::LoadExpr>(p);
-  if (is_load_expr) {
-    return IsVector(is_load_expr->inner);
-  }
-
-  auto is_unary_expr = std::dynamic_pointer_cast<sem::UnaryExpr>(p);
-  if (is_unary_expr) {
-    return IsVector(is_unary_expr->inner);
-  }
-
-  auto is_cond_expr = std::dynamic_pointer_cast<sem::CondExpr>(p);
-  if (is_cond_expr) {
-    return IsVector(is_cond_expr->tcase) || IsVector(is_cond_expr->fcase) || IsVector(is_cond_expr->cond);
-  }
-
-  auto is_select_expr = std::dynamic_pointer_cast<sem::SelectExpr>(p);
-  if (is_select_expr) {
-    return IsVector(is_select_expr->tcase) || IsVector(is_select_expr->fcase) || IsVector(is_select_expr->cond);
-  }
-
-  auto binary_expr = std::dynamic_pointer_cast<sem::BinaryExpr>(p);
-  if (binary_expr) {
-    return IsVector(binary_expr->lhs) || IsVector(binary_expr->rhs);
-  }
-
-  return false;
-}
-
-bool Emit::IsVector(const sem::LValPtr p) {
-  auto is_lookup_lval = std::dynamic_pointer_cast<sem::LookupLVal>(p);
-  if (is_lookup_lval) return IsVector(*is_lookup_lval);
-  auto is_subscript_lval = std::dynamic_pointer_cast<sem::SubscriptLVal>(p);
-  if (is_subscript_lval) return IsVector(*is_subscript_lval);
-  return false;
-}
-
-bool Emit::IsVector(const sem::LookupLVal& v) { return vector_params_.find(v.name) != vector_params_.end(); }
-bool Emit::IsVector(const sem::SubscriptLVal& v) { return IsVector(v.ptr); }
 
 int Emit::CalculateLocalIndexStride(const sem::ExprPtr p) {
   auto binary_expr = std::dynamic_pointer_cast<sem::BinaryExpr>(p);
@@ -1112,6 +1027,58 @@ int Emit::GetLocalIndexStride(const sem::ExprPtr p) {
     return GetLocalIndexStride(is_load_expr->inner);
   }
   return 0;
+}
+
+std::string Emit::GetGlobalVarWithOffset(const sem::LValPtr p) {
+  tv.InitGlobalVarWithOffset();
+  p->Accept(tv);
+  return tv.GetGlobalVarWithOffset();
+}
+
+std::string Emit::GetGlobalVarWithOffset(const sem::LValue& v) {
+  tv.InitGlobalVarWithOffset();
+  v.Accept(tv);
+  return tv.GetGlobalVarWithOffset();
+}
+
+bool Emit::IsVector(const sem::ExprPtr p) {
+  tv.InitCheckVector();
+  p->Accept(tv);
+  return tv.CheckVector();
+}
+
+bool Emit::IsVector(const sem::LValPtr p) {
+  tv.InitCheckVector();
+  p->Accept(tv);
+  return tv.CheckVector();
+}
+
+bool Emit::IsVector(const sem::LValue& v) {
+  tv.InitCheckVector();
+  v.Accept(tv);
+  return tv.CheckVector();
+}
+
+void Emit::emitVector(const sem::Type& type, const std::string& size, const std::string& name) {
+  emitTab();
+  emit("vector<");
+  emitType(type);
+  emit(",");
+  emit(size);
+  emit("> ");
+  emit(name);
+  tv.vector_params.insert(name);
+}
+
+void Emit::emitVector(const std::string& type, const std::string& size, const std::string& name) {
+  emitTab();
+  emit("vector<");
+  emit(type);
+  emit(",");
+  emit(size);
+  emit("> ");
+  emit(name);
+  tv.vector_params.insert(name);
 }
 
 }  // namespace cm
