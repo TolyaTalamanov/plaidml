@@ -65,7 +65,6 @@ class Emit : public lang::EmitC {
   std::string GetGlobalVarWithOffset(const sem::LValPtr& p);
   std::string GetGlobalVarWithOffset(const sem::LValue& v);
   void EmitVector(const sem::Type& type, const size_t& size, const std::string& name);
-  void EmitVector(const std::string& type, const size_t& size, const std::string& name);
   std::map<std::shared_ptr<sem::LoadExpr>, std::string> GetGlobalLoadExprMap(const sem::ExprPtr& p);
 
   std::string GetLValueName(const sem::LValPtr& lv);

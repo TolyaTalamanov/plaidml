@@ -233,7 +233,6 @@ void Emit::Visit(const sem::StoreStmt& n) {
 
 void Emit::Visit(const sem::DeclareStmt& n) {
   sem::Type ty = n.type;
-
   if (ty.dtype == DataType::BOOLEAN) {
     ty.dtype = DataType::INT8;
   }
@@ -305,49 +304,23 @@ void Emit::Visit(const sem::DeclareStmt& n) {
 
     auto cast_exp = std::dynamic_pointer_cast<sem::CastExpr>(n.init);
     if (cast_exp) {
-      auto load_exp = std::dynamic_pointer_cast<sem::LoadExpr>(cast_exp->val);
-      if (load_exp) {
-        EmitVector(ty, vector_size, n.name);
-        emit(" = ");
-        n.init->Accept(*this);
-        emit(";\n");
-        CheckValidType(ty);
-        scope_->Bind(n.name, ty);
-        return;
-      }
+      EmitVector(ty, vector_size, n.name);
+      emit(";\n");
+
+      emitTab();
+      emit(n.name);
+      emit(" = ");
+      n.init->Accept(*this);
+      emit(";\n");
+      CheckValidType(ty);
+      scope_->Bind(n.name, ty);
+      return;
     }
 
     auto cond_exp = std::dynamic_pointer_cast<sem::CondExpr>(n.init);
-    if (cond_exp) {
-      if (IsVector(cond_exp)) {
-        EmitVector(ty, vector_size, n.name);
-        emit(";\n");
-
-        emitTab();
-        emit(n.name);
-        emit(".");
-        n.init->Accept(*this);
-        emit(";\n");
-        CheckValidType(ty);
-        scope_->Bind(n.name, ty);
-        return;
-      } else {
-        emitTab();
-        emitType(ty);
-        emit(" ");
-        emit(n.name);
-        emit(".");
-        n.init->Accept(*this);
-        emit(";\n");
-        CheckValidType(ty);
-        scope_->Bind(n.name, ty);
-        return;
-      }
-    }
-
     auto select_exp = std::dynamic_pointer_cast<sem::SelectExpr>(n.init);
-    if (select_exp) {
-      if (IsVector(cond_exp)) {
+    if (cond_exp || select_exp) {
+      if (IsVector(n.init)) {
         EmitVector(ty, vector_size, n.name);
         emit(";\n");
 
@@ -356,9 +329,6 @@ void Emit::Visit(const sem::DeclareStmt& n) {
         emit(".");
         n.init->Accept(*this);
         emit(";\n");
-        CheckValidType(ty);
-        scope_->Bind(n.name, ty);
-        return;
       } else {
         emitTab();
         emitType(ty);
@@ -367,10 +337,10 @@ void Emit::Visit(const sem::DeclareStmt& n) {
         emit(".");
         n.init->Accept(*this);
         emit(";\n");
-        CheckValidType(ty);
-        scope_->Bind(n.name, ty);
-        return;
       }
+      CheckValidType(ty);
+      scope_->Bind(n.name, ty);
+      return;
     }
 
     auto binary_exp = std::dynamic_pointer_cast<sem::BinaryExpr>(n.init);
@@ -378,19 +348,17 @@ void Emit::Visit(const sem::DeclareStmt& n) {
       if (IsVector(binary_exp)) {
         if (binary_exp->op == ">" || binary_exp->op == "<" || binary_exp->op == ">=" || binary_exp->op == "<=" ||
             binary_exp->op == "==" || binary_exp->op == "!=") {
-          EmitVector("char", vector_size, n.name);
           ty.dtype = DataType::INT8;
-          scope_->Bind(n.name, ty);
+          EmitVector(ty, vector_size, n.name);
         } else {
           EmitVector(ty, vector_size, n.name);
-          scope_->Bind(n.name, ty);
         }
 
         emit(" = ");
         n.init->Accept(*this);
         emit(";\n");
         CheckValidType(ty);
-        // scope_->Bind(n.name, ty);
+        scope_->Bind(n.name, ty);
         return;
       }
     }
@@ -412,11 +380,11 @@ void Emit::Visit(const sem::DeclareStmt& n) {
     }
 
     auto unary_expr = std::dynamic_pointer_cast<sem::UnaryExpr>(n.init);
-    if (unary_expr && IsVector(unary_expr)) {
+    if (unary_expr && IsVector(n.init)) {
       EmitVector(ty, vector_size, n.name);
       emit(" = ");
 
-      unary_expr->Accept(*this);
+      n.init->Accept(*this);
       emit(";\n");
       CheckValidType(ty);
       scope_->Bind(n.name, ty);
@@ -796,8 +764,8 @@ void Emit::AssignGlobalVarToTemp(const sem::ExprPtr& e) {
   for (auto result : result_map) {
     std::string temp_val = "cm_temp" + std::to_string(temp_var_num);
     temp_var_num++;
-    auto type = TypeOf(result.first->inner);
-    EmitVector(type, vector_size, temp_val);
+    auto ty = TypeOf(result.first->inner);
+    EmitVector(ty, vector_size, temp_val);
     emit(";\n");
 
     auto s = GetGlobalVarWithOffset(result.first->inner);
@@ -912,17 +880,6 @@ void Emit::EmitVector(const sem::Type& type, const size_t& size, const std::stri
   emitTab();
   emit("vector<");
   emitType(type);
-  emit(",");
-  emit(size);
-  emit("> ");
-  emit(name);
-  tv.vector_params.insert(name);
-}
-
-void Emit::EmitVector(const std::string& type, const size_t& size, const std::string& name) {
-  emitTab();
-  emit("vector<");
-  emit(type);
   emit(",");
   emit(size);
   emit("> ");
