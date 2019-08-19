@@ -405,7 +405,7 @@ message AutotilePass {
   // is generally the place to put a memory limit, but in some architectures
   // inputs are held in one memory and outputs are held in accumulation
   // registers in a separate memory.  0 means no limit.
-  optional int64 max_total_size = 12 [default = 0];
+  optional int64 max_local_size = 12 [default = 0];
   // The maximal  number of inner loops allowed by the inner block.  0 means no
   // limit.
   optional int64 max_sizes_product = 13 [default = 0];

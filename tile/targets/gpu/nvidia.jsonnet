@@ -134,7 +134,7 @@ local PARAMS = {
                 only_po2: true,
                 odd_size: true,
                 min_out_count: PARAMS[cfg].NUM_UNITS,
-                max_total_size: PARAMS[cfg].LOCAL_MEM_KIB * 1024,
+                max_local_size: PARAMS[cfg].LOCAL_MEM_KIB * 1024,
                 max_sizes_product: PARAMS[cfg].NUM_THREADS * 64,
                 min_out_size: PARAMS[cfg].NUM_THREADS,
                 cache_width: PARAMS[cfg].CACHE_WIDTH,

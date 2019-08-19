@@ -27,7 +27,7 @@ struct TileMetrics {
   int64_t output_bytes = 0;
   int64_t max_output_bytes = 0;
   double output_bandwidth = 0;
-  int64_t total_bytes = 0;
+  int64_t total_local_bytes = 0;
   double total_bandwidth = 0;
 
   bool IsValid(const proto::AutotilePass& options) const {
@@ -35,7 +35,7 @@ struct TileMetrics {
              (options.max_per_output_size() && max_output_bytes > options.max_per_output_size()) ||
              (options.max_input_size() && input_bytes > options.max_input_size()) ||
              (options.max_per_input_size() && max_input_bytes > options.max_per_input_size()) ||
-             (options.max_total_size() && total_bytes > options.max_total_size()));
+             (options.max_local_size() && total_local_bytes > options.max_local_size()));
   }
 };
 
@@ -107,7 +107,7 @@ std::ostream& operator<<(std::ostream& os, const TileMetrics& metrics) {
      << ", " << metrics.output_bytes      //
      << ", " << metrics.max_output_bytes  //
      << ", " << metrics.output_bandwidth  //
-     << ", " << metrics.total_bytes       //
+     << ", " << metrics.total_local_bytes //
      << ", " << metrics.total_bandwidth << ")";
   return os;
 }
@@ -132,11 +132,20 @@ TensorShape MakeOddTile(const TensorShape& tile) {
   return odd_tile;
 }
 
+std::string CommonRefinement(const Block& block, Block* next_block,
+                             std::map<std::string, std::string>* idx_map) {
+  return "";
+}
+
 TileMetrics ComputeSizes(const std::map<std::string, size_t>& tile_by_name,  //
                          const Block& block,                                 //
                          Block* next_block,                                  //
                          const proto::AutotilePass& options) {
   TileMetrics ret;
+  // The index map from block to next_block
+  std::map<std::string, std::string> idx_map;
+  std::string common_ref = CommonRefinement(block, next_block, &idx_map);
+
   for (const auto& ref : block.refs) {
     if (ref.dir == RefDir::None) {
       continue;
@@ -150,8 +159,54 @@ TileMetrics ComputeSizes(const std::map<std::string, size_t>& tile_by_name,  //
     auto tiled = ref.ApplyTile(tile_by_name);
     int64_t bytes = options.odd_size() ?
       Codec::Resolve(MakeOddTile(tiled))->byte_size() : Codec::Resolve(tiled)->byte_size();
+    ret.total_local_bytes += bytes;
     double bandwidth = tiled.memory_io(options.cache_width());
-    ret.total_bytes += bytes;
+    if (ref.from != common_ref) {
+      ret.total_bandwidth += bandwidth;
+    }
+    if (ref.dir == RefDir::In) {
+      ret.input_bytes += bytes;
+      ret.max_input_bytes = std::max(ret.max_input_bytes, bytes);
+      if (ref.from != common_ref) {
+        ret.input_bandwidth += bandwidth;
+      }
+    } else if (ref.dir == RefDir::Out) {
+      ret.output_bytes += bytes;
+      ret.max_output_bytes = std::max(ret.max_output_bytes, bytes);
+      if (ref.from != common_ref) {
+        ret.output_bandwidth += bandwidth;
+      }
+    }
+    IVLOG(4, "    ComputeSizes> ref: " << ref);
+    IVLOG(4, "                tiled: " << tiled);
+    IVLOG(4, "                bytes: " << bytes);
+    IVLOG(4, "            bandwidth: " << bandwidth);
+    IVLOG(4, "          cache_width: " << options.cache_width());
+  }
+  if (next_block == nullptr) {
+    return ret;
+  }
+
+  std::map<std::string, size_t> next_tile_by_name;
+  for (auto it : idx_map) {
+    const auto& tn_it = tile_by_name.find(it.first);
+    next_tile_by_name.emplace(it.second, tn_it->second);
+  }
+  // Consider the next block
+  for (const auto& ref : next_block->refs) {
+    if (ref.dir == RefDir::None || ref.from == common_ref) {
+      continue;
+    }
+    if (options.skip_1d() && ref.interior_shape.dims.size() == 1) {
+      continue;
+    }
+    if (!options.loc_name().empty() && ref.location != options.loc_name()) {
+      continue;
+    }
+    auto tiled = ref.ApplyTile(next_tile_by_name);
+    int64_t bytes = options.odd_size() ?
+      Codec::Resolve(MakeOddTile(tiled))->byte_size() : Codec::Resolve(tiled)->byte_size();
+    double bandwidth = tiled.memory_io(options.cache_width());
     ret.total_bandwidth += bandwidth;
     if (ref.dir == RefDir::In) {
       ret.input_bytes += bytes;
@@ -162,11 +217,6 @@ TileMetrics ComputeSizes(const std::map<std::string, size_t>& tile_by_name,  //
       ret.max_output_bytes = std::max(ret.max_output_bytes, bytes);
       ret.output_bandwidth += bandwidth;
     }
-    IVLOG(4, "    ComputeSizes> ref: " << ref);
-    IVLOG(4, "                tiled: " << tiled);
-    IVLOG(4, "                bytes: " << bytes);
-    IVLOG(4, "            bandwidth: " << bandwidth);
-    IVLOG(4, "          cache_width: " << options.cache_width());
   }
   return ret;
 }

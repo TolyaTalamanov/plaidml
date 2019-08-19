@@ -124,7 +124,7 @@ local PARAMS = {
                 // Only consider PO2 sizes for speed
                 only_po2: true,
                 // All inputs must fit in local memory
-                max_total_size: PARAMS[cfg].L1_CACHE_SIZE * 1024,
+                max_local_size: PARAMS[cfg].L1_CACHE_SIZE * 1024,
                 // Since all loads to/from global memory are across a wide bus, use that as the
                 // cache_width to optimize for contigous regions of DRAM for each inner block
                 cache_width: PARAMS[cfg].CACHE_WIDTH,
