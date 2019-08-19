@@ -610,13 +610,37 @@ std::ostream& operator<<(std::ostream& os, const Block& block) {
   return os;
 }
 
-std::vector<size_t> Block::sorted_idx_ranges() {
+std::vector<size_t> Block::sorted_idx_ranges() const {
   std::vector<size_t> ranges;
   for (const auto& idx : idxs) {
     ranges.push_back(idx.range);
   }
   std::sort(ranges.begin(), ranges.end());
   return ranges;
+}
+
+std::vector<size_t> Block::ref_shape(const std::string& ref_name) const {
+  auto ref_it = ref_by_from(ref_name);
+  std::vector<size_t> shape;
+  for (const auto& acc : ref_it->access) {
+    const auto& acc_map = acc.getMap();
+    if (acc_map.size() > 1) {
+      return {};
+    }
+    if (acc_map.size() == 0) {
+      shape.push_back(1);
+      continue;
+    }
+    auto& idx_name = acc_map.begin()->first;
+    if (idx_name == "") {
+      shape.push_back(1);
+    }
+    else {
+      auto idx = idx_by_name(idx_name);
+      shape.push_back((idx->affine == Affine()) ? idx->range : 1);
+    }
+  }
+  return shape;
 }
 
 std::shared_ptr<Block> Block::SubBlock(size_t pos, bool reverse) const {

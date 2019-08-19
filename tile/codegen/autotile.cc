@@ -134,6 +134,44 @@ TensorShape MakeOddTile(const TensorShape& tile) {
 
 std::string CommonRefinement(const Block& block, Block* next_block,
                              std::map<std::string, std::string>* idx_map) {
+  std::set<std::string> next_ins;
+  for (auto next_ref : next_block->ref_ins(true)) {
+    next_ins.insert(next_ref->from);
+  }
+  for (auto block_ref : block.ref_outs(true)) {
+    if (next_ins.find(block_ref->from) == next_ins.end()) {
+      continue;
+    }
+    std::vector<size_t> block_ref_shape = block.ref_shape(block_ref->from);
+    std::vector<size_t> next_ref_shape = next_block->ref_shape(block_ref->from);
+    if (block_ref_shape.empty() || next_ref_shape.empty() ||
+        block_ref_shape != next_ref_shape) {
+      continue;
+    }
+    // Found the common ref, then make the index map
+    auto next_ref_it = next_block->ref_by_from(block_ref->from);
+    size_t n_dim = block_ref->access.size();
+    bool failed = false;
+    for (size_t i = 0; i < n_dim; ++i) {
+      const std::string& block_idx_name = block_ref->access[i].getMap().begin()->first;
+      const std::string& next_idx_name = next_ref_it->access[i].getMap().begin()->first;
+      const Index* block_idx = block.idx_by_name(block_idx_name);
+      const Index* next_idx = next_block->idx_by_name(next_idx_name);
+      if (block_idx->range == next_idx->range) {
+        idx_map->emplace(block_idx->name, next_idx->name);
+      }
+      else {
+        failed = true;
+        break;
+      }
+    }
+    if (failed) {
+      idx_map->clear();
+    }
+    else {
+      return block_ref->from;
+    }
+  }
   return "";
 }
 
@@ -144,7 +182,7 @@ TileMetrics ComputeSizes(const std::map<std::string, size_t>& tile_by_name,  //
   TileMetrics ret;
   // The index map from block to next_block
   std::map<std::string, std::string> idx_map;
-  std::string common_ref = CommonRefinement(block, next_block, &idx_map);
+  std::string common_ref = next_block ? CommonRefinement(block, next_block, &idx_map) : "";
 
   for (const auto& ref : block.refs) {
     if (ref.dir == RefDir::None) {
@@ -177,11 +215,6 @@ TileMetrics ComputeSizes(const std::map<std::string, size_t>& tile_by_name,  //
         ret.output_bandwidth += bandwidth;
       }
     }
-    IVLOG(4, "    ComputeSizes> ref: " << ref);
-    IVLOG(4, "                tiled: " << tiled);
-    IVLOG(4, "                bytes: " << bytes);
-    IVLOG(4, "            bandwidth: " << bandwidth);
-    IVLOG(4, "          cache_width: " << options.cache_width());
   }
   if (next_block == nullptr) {
     return ret;
@@ -251,6 +284,17 @@ std::ostream& operator<<(std::ostream& os, Cost cost) {
   return os;
 }
 
+size_t BlockInstructions(const Block& block) {
+  size_t count = 0;
+  // We count only intrinsics now
+  for (const auto& stmt : block.stmts) {
+    if (stmt->kind() == StmtKind::Intrinsic) {
+      ++count;
+    }
+  }
+  return count;
+}
+
 struct ComputeDensityCostModel {
   const proto::AutotilePass& options;
   std::set<const Index*> acc_idxs;
@@ -286,7 +330,6 @@ struct ComputeDensityCostModel {
       }
     }
 
-    double total_compute = 1;
     double tile_expand = 1;
     int64_t tot_size = tile.sizes_product();
     int64_t tot_count = tile.counts_product();
@@ -295,9 +338,10 @@ struct ComputeDensityCostModel {
     }
     int64_t tot_out_size = 1;
     int64_t tot_out_count = 1;
+    double total_block_compute = BlockInstructions(block);;
     for (size_t i = 0; i < block.idxs.size(); i++) {
       const auto& tile_dim = tile.dims[i];
-      total_compute *= tile_by_name[block.idxs[i].name];
+      total_block_compute *= tile_by_name[block.idxs[i].name];
       size_t padded_size = tile_dim.size * tile_dim.count;
       tile_expand *= static_cast<double>(padded_size) / static_cast<double>(block.idxs[i].range);
       if (!acc_idxs.count(&block.idxs[i])) {
@@ -305,6 +349,27 @@ struct ComputeDensityCostModel {
         tot_out_count *= tile_dim.count;
       }
     }
+
+    double total_next_compute;
+    if (next_block) {
+      total_next_compute = BlockInstructions(*next_block);
+      for (size_t i = 0; i < next_block->idxs.size(); i++) {
+        const auto& tile_dim = tile.dims[i];
+        total_next_compute *= tile_by_name[block.idxs[i].name];
+        size_t padded_size = tile_dim.size * tile_dim.count;
+        tile_expand *= static_cast<double>(padded_size) / static_cast<double>(block.idxs[i].range);
+        if (!acc_idxs.count(&block.idxs[i])) {
+          tot_out_size *= tile_dim.size;
+          tot_out_count *= tile_dim.count;
+        }
+      }
+    }
+    else {
+      total_next_compute = 0;
+    }
+
+    double total_compute = total_block_compute + total_next_compute;
+
     double inv_size_util = static_cast<double>(options.min_size()) / std::min(tot_size, options.min_size());
     double inv_out_size_util =
         static_cast<double>(options.min_out_size()) / std::min(tot_out_size, options.min_out_size());

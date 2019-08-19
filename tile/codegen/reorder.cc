@@ -38,29 +38,6 @@ static bool Depends(const std::vector<StmtPtr>& stmts, const std::set<StmtPtr>& 
   return false;
 }
 
-static std::vector<size_t> MakeRefShape(Block* block, const Refinement& ref) {
-  std::vector<size_t> shape;
-  for (const auto& acc : ref.access) {
-    const auto& acc_map = acc.getMap();
-    if (acc_map.size() > 1) {
-      return {};
-    }
-    if (acc_map.size() == 0) {
-      shape.push_back(1);
-      continue;
-    }
-    auto& idx_name = acc_map.begin()->first;
-    if (idx_name == "") {
-      shape.push_back(1);
-    }
-    else {
-      auto idx = block->idx_by_name(idx_name);
-      shape.push_back((idx->affine == Affine()) ? idx->range : 1);
-    }
-  }
-  return shape;
-}
-
 static bool MayFuse(std::shared_ptr<StmtList> s0, std::shared_ptr<StmtList> s1) {
   if (!s1->in_eltwise) {
     return false;
@@ -139,7 +116,7 @@ void ReorderBlocksPass::Apply(CompilerState* state) const {
         sl->in_eltwise = true;
         sl->out_eltwise = true;
         for (const auto& ref : block->refs) {
-          std::vector<size_t> rs = MakeRefShape(block.get(), ref);
+          std::vector<size_t> rs = block->ref_shape(ref.from);
           if (IsReadDir(ref.dir)) {
             sl->inputs.emplace(ref.from, rs);
           }
@@ -150,7 +127,7 @@ void ReorderBlocksPass::Apply(CompilerState* state) const {
       } else if (block->has_tag("contraction")) {
         for (const auto& ref : block->refs) {
           if (IsWriteDir(ref.dir)) {
-            std::vector<size_t> rs = MakeRefShape(block.get(), ref);
+            std::vector<size_t> rs = block->ref_shape(ref.from);
             sl->outputs.emplace(ref.from, rs);
           }
         }

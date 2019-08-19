@@ -465,7 +465,9 @@ struct Block : Statement {
   std::string unique_idx_name(const std::string& name) const;
   TensorShape exterior_shape(const std::string& name) const;
   // Sorted index ranges
-  std::vector<size_t> sorted_idx_ranges();
+  std::vector<size_t> sorted_idx_ranges() const;
+  // The refinement shape by index. If its accesses are complex, return empty.
+  std::vector<size_t> ref_shape(const std::string& ref_name) const;
 
   std::shared_ptr<Block> SubBlock(size_t pos, bool reverse = false) const;
 };
