@@ -249,8 +249,7 @@ TileMetrics ComputeSizes(const std::map<std::string, size_t>& tile_by_name,     
       continue;
     }
     auto tiled = ref.ApplyTile(next_tile_by_name);
-    int64_t bytes = options.odd_size() ?
-      Codec::Resolve(MakeOddTile(tiled))->byte_size() : Codec::Resolve(tiled)->byte_size();
+    int64_t bytes = Codec::Resolve(tiled)->byte_size();
     double bandwidth = tiled.memory_io(options.cache_width());
     ret.total_bandwidth += bandwidth;
     if (ref.dir == RefDir::In) {
@@ -378,13 +377,13 @@ struct ComputeDensityCostModel {
     }
     int64_t tot_block_out_size = 1;
     int64_t tot_block_out_count = 1;
-    double block_tile_expand = 1;
+    double tile_expand = 1;
     double total_block_compute = BlockInstructions(block);;
     for (size_t i = 0; i < block.idxs.size(); i++) {
       const auto& tile_dim = tile.dims[i];
       total_block_compute *= tile_by_name[block.idxs[i].name];
       size_t padded_size = tile_dim.size * tile_dim.count;
-      block_tile_expand *= static_cast<double>(padded_size) / static_cast<double>(block.idxs[i].range);
+      tile_expand *= static_cast<double>(padded_size) / static_cast<double>(block.idxs[i].range);
       if (!acc_idxs.count(&block.idxs[i])) {
         tot_block_out_size *= tile_dim.size;
         tot_block_out_count *= tile_dim.count;
@@ -392,21 +391,15 @@ struct ComputeDensityCostModel {
     }
 
     double total_next_compute;
-    double next_tile_expand;
     int64_t tot_next_out_size;
     int64_t tot_next_out_count;
     if (next_block) {
       tot_next_out_size = 1;
       tot_next_out_count = 1;
-      next_tile_expand = 1;
       total_next_compute = BlockInstructions(*next_block);
       for (size_t i = 0; i < next_block->idxs.size(); i++) {
         const auto& next_tile_dim = next_tile.dims[i];
-        if (next_tile_by_name.find(next_block->idxs[i].name) != next_tile_by_name.end()) {
-          total_next_compute *= next_tile_by_name[next_block->idxs[i].name];
-        }
-        size_t padded_size = next_tile_dim.size * next_tile_dim.count;
-        next_tile_expand *= static_cast<double>(padded_size) / static_cast<double>(next_block->idxs[i].range);
+        total_next_compute *= next_tile_by_name[next_block->idxs[i].name];
         if (!next_acc_idxs.count(&block.idxs[i])) {
           tot_next_out_size *= next_tile_dim.size;
           tot_next_out_count *= next_tile_dim.count;
@@ -415,12 +408,10 @@ struct ComputeDensityCostModel {
     }
     else {
       total_next_compute = 0;
-      next_tile_expand = 0;
       tot_next_out_size = 0;
       tot_next_out_count = 0;
     }
     double total_compute = total_block_compute + total_next_compute;
-    double tile_expand = block_tile_expand + next_tile_expand;
     int64_t tot_out_size = tot_block_out_size + tot_next_out_size;
     int64_t tot_out_count = tot_block_out_count + tot_next_out_count;
 
