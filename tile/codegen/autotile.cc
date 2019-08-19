@@ -375,45 +375,32 @@ struct ComputeDensityCostModel {
     if (options.max_count() && tot_count > options.max_count()) {
       return Cost::Continue;
     }
-    int64_t tot_block_out_size = 1;
-    int64_t tot_block_out_count = 1;
+    int64_t tot_out_size = 1;
+    int64_t tot_out_count = 1;
     double tile_expand = 1;
-    double total_block_compute = BlockInstructions(block);;
+    double total_block_compute = BlockInstructions(block);
     for (size_t i = 0; i < block.idxs.size(); i++) {
       const auto& tile_dim = tile.dims[i];
       total_block_compute *= tile_by_name[block.idxs[i].name];
       size_t padded_size = tile_dim.size * tile_dim.count;
       tile_expand *= static_cast<double>(padded_size) / static_cast<double>(block.idxs[i].range);
       if (!acc_idxs.count(&block.idxs[i])) {
-        tot_block_out_size *= tile_dim.size;
-        tot_block_out_count *= tile_dim.count;
+        tot_out_size *= tile_dim.size;
+        tot_out_count *= tile_dim.count;
       }
     }
 
     double total_next_compute;
-    int64_t tot_next_out_size;
-    int64_t tot_next_out_count;
     if (next_block) {
-      tot_next_out_size = 1;
-      tot_next_out_count = 1;
       total_next_compute = BlockInstructions(*next_block);
       for (size_t i = 0; i < next_block->idxs.size(); i++) {
-        const auto& next_tile_dim = next_tile.dims[i];
         total_next_compute *= next_tile_by_name[next_block->idxs[i].name];
-        if (!next_acc_idxs.count(&block.idxs[i])) {
-          tot_next_out_size *= next_tile_dim.size;
-          tot_next_out_count *= next_tile_dim.count;
-        }
       }
     }
     else {
       total_next_compute = 0;
-      tot_next_out_size = 0;
-      tot_next_out_count = 0;
     }
     double total_compute = total_block_compute + total_next_compute;
-    int64_t tot_out_size = tot_block_out_size + tot_next_out_size;
-    int64_t tot_out_count = tot_block_out_count + tot_next_out_count;
 
     double inv_size_util = static_cast<double>(options.min_size()) / std::min(tot_size, options.min_size());
     double inv_out_size_util =
