@@ -41,7 +41,7 @@ class Emit : public lang::EmitC {
   void Visit(const sem::Function&) final;
 
   size_t vector_size;
-  bool rw_single_element_mode;
+  bool single_element_rw_mode;
   bool single_eu_mode;
 
   TravelVisitor tv;
@@ -75,13 +75,12 @@ class Emit : public lang::EmitC {
   void EmitSingleElementWriteStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs);
   void AssignGlobalVarToTemp(const sem::ExprPtr& e);
 
-  std::map<std::string, int> vector_stride_map;
-
-  bool is_sub_group_broadcast_first_val = false;
-  bool in_read_statement = false;
-  bool in_write_statement = false;
-  sem::Type write_type;
   int temp_num = 0;
+  bool read_mode = false;
+  bool write_mode = false;
+  bool sub_group_broadcast_first_val = false;
+  sem::Type write_type;
+  std::map<std::string, int> vector_stride_map;
   std::map<std::string, std::string> input_replace_map;
   std::set<std::string> large_sparse_vactor;
 

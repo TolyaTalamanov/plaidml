@@ -19,112 +19,6 @@ namespace tile {
 namespace hal {
 namespace cm {
 
-inline std::string c_dtype(const DataType& dt) {
-  std::string base;
-  switch (dt) {
-    case DataType::BOOLEAN:
-      base = "(bool)";
-      break;
-    case DataType::INT8:
-      base = "(char)";
-      break;
-    case DataType::INT16:
-      base = "(short)";
-      break;
-    case DataType::INT32:
-      base = "(int)";
-      break;
-    case DataType::INT64:
-      base = "(long)";
-      break;
-    case DataType::UINT8:
-      base = "(uchar)";
-      break;
-    case DataType::UINT16:
-      base = "(ushort)";
-      break;
-    case DataType::UINT32:
-      base = "(uint)";
-      break;
-    case DataType::UINT64:
-      base = "(ulong)";
-      break;
-    case DataType::FLOAT16:
-      base = "(half)";
-      break;
-    case DataType::FLOAT32:
-      base = "(float)";
-      break;
-    case DataType::FLOAT64:
-      base = "(double)";
-      break;
-    default:
-      throw std::runtime_error("Invalid tile type");
-  }
-  return base;
-}
-
-void Emit::Visit(const sem::SubscriptLVal& n) {
-  if (in_write_statement) {
-    if (!rw_single_element_mode) {
-      int stride = GetIndexStride(n.offset);
-      if (stride > 1) {
-        n.ptr->Accept(*this);
-        emit(", ");
-        n.offset->Accept(*this);
-        emit(", ");
-        emit("element_offset_");
-        emit(std::to_string(stride));
-        return;
-      }
-    }
-    n.ptr->Accept(*this);
-    emit(", sizeof(");
-    emitType(write_type);
-    emit(") * ");
-    n.offset->Accept(*this);
-    if (IsVector(n.offset)) {
-      emit("(0)");
-    }
-    return;
-  }
-
-  auto s = GetGlobalVarWithOffset(n);
-  if (s.length() > 0 && input_replace_map.find(s) != input_replace_map.end()) {
-    emit(input_replace_map[s]);
-    return;
-  }
-
-  if (is_sub_group_broadcast_first_val) {
-    is_sub_group_broadcast_first_val = false;
-    n.ptr->Accept(*this);
-    emit("(");
-    n.offset->Accept(*this);
-    auto is_lookup_lval = std::dynamic_pointer_cast<sem::LookupLVal>(n.ptr);
-    if (large_sparse_vactor.find(is_lookup_lval->name) == large_sparse_vactor.end()) {
-      emit(" * ");
-      emit(vector_size);
-    }
-    return;
-  }
-  n.ptr->Accept(*this);
-  auto is_lookup_lval = std::dynamic_pointer_cast<sem::LookupLVal>(n.ptr);
-
-  if (in_read_statement || vector_stride_map.find(GetLValueName(n.ptr)) == vector_stride_map.end() ||
-      vector_stride_map[GetLValueName(n.ptr)] >= 1) {
-    emit(".select<");
-    emit(vector_size);
-    emit(", 1>");
-  }
-  emit("(");
-  n.offset->Accept(*this);
-  if (large_sparse_vactor.find(is_lookup_lval->name) == large_sparse_vactor.end()) {
-    emit(" * ");
-    emit(vector_size);
-  }
-  emit(")");
-}
-
 void Emit::Visit(const sem::LoadExpr& n) {
   auto ty = TypeOf(n.inner);
   auto s = GetGlobalVarWithOffset(n.inner);
@@ -134,7 +28,7 @@ void Emit::Visit(const sem::LoadExpr& n) {
   }
   auto inner = std::dynamic_pointer_cast<sem::SubscriptLVal>(n.inner);
   if (inner && GetGlobalVarWithOffset(inner).size() > 0) {
-    if (!rw_single_element_mode) {
+    if (!single_element_rw_mode) {
       int stride = GetIndexStride(inner->offset);
       if (stride > 1) {
         inner->ptr->Accept(*this);
@@ -159,90 +53,6 @@ void Emit::Visit(const sem::LoadExpr& n) {
   }
 }
 
-void Emit::EmitSingleElementWriteStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs) {
-  emitTab();
-  auto ty_lhs = TypeOf(lhs);
-  switch (ty_lhs.dtype) {
-    case DataType::INT8:
-    case DataType::UINT8:
-    case DataType::INT16:
-    case DataType::UINT16:
-    case DataType::FLOAT16:
-      emit("_write_single_element(");
-      break;
-    case DataType::INT32:
-    case DataType::UINT32:
-    case DataType::FLOAT32:
-      emit("_write_atomic_single_dword(");
-      break;
-    case DataType::INT64:
-      emit("_write_atomic_single_long(");
-      break;
-    default:
-      throw std::runtime_error("EmitSingleElementWriteStat: this data type is not supported!");
-  }
-  in_write_statement = true;
-  write_type = ty_lhs;
-  lhs->Accept(*this);
-  in_write_statement = false;
-  emit(", ");
-  auto ty_rhs = TypeOf(rhs);
-  if (c_dtype(ty_lhs.dtype) != c_dtype(ty_rhs.dtype)) {
-    emit(c_dtype(ty_lhs.dtype));
-  }
-  rhs->Accept(*this);
-  if (IsVector(rhs)) {
-    emit("(0)");
-  }
-  emit(");\n");
-}
-
-void Emit::EmitWriteStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs) {
-  emitTab();
-  emit("_write(");
-  in_write_statement = true;
-  write_type = TypeOf(lhs);
-  lhs->Accept(*this);
-  in_write_statement = false;
-  emit(", ");
-  rhs->Accept(*this);
-  emit(");\n");
-}
-
-void Emit::EmitWriteStat(const sem::LValPtr& lhs, const std::string& rhs) {
-  emitTab();
-  emit("_write(");
-  in_write_statement = true;
-  write_type = TypeOf(lhs);
-  lhs->Accept(*this);
-  in_write_statement = false;
-  emit(", ");
-  emit(rhs);
-  emit(");\n");
-}
-
-void Emit::EmitReadStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs) {
-  emitTab();
-  emit("_read(");
-  in_read_statement = true;
-  rhs->Accept(*this);
-  emit(", ");
-  lhs->Accept(*this);
-  emit(");\n");
-  in_read_statement = false;
-}
-
-void Emit::EmitReadStat(const std::string& lhs, const sem::ExprPtr& rhs) {
-  emitTab();
-  emit("_read(");
-  in_read_statement = true;
-  rhs->Accept(*this);
-  emit(", ");
-  emit(lhs);
-  emit(");\n");
-  in_read_statement = false;
-}
-
 void Emit::Visit(const sem::StoreStmt& n) {
   auto ty_lhs = TypeOf(n.lhs);
   auto s = GetGlobalVarWithOffset(n.lhs);
@@ -252,7 +62,7 @@ void Emit::Visit(const sem::StoreStmt& n) {
     AssignGlobalVarToTemp(n.rhs);
 
     auto int_const = std::dynamic_pointer_cast<sem::IntConst>(n.rhs);
-    if (rw_single_element_mode || int_const) {
+    if (single_element_rw_mode || int_const) {
       EmitSingleElementWriteStat(n.lhs, n.rhs);
       return;
     }
@@ -310,7 +120,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
       if (stride > 1) {
         std::string vname = "element_offset_" + std::to_string(stride);
         if (tv.vector_params.find(vname) == tv.vector_params.end()) {
-          if (!rw_single_element_mode) {
+          if (!single_element_rw_mode) {
             emitTab();
             emit("cm_vector(");
             emit(vname);
@@ -403,6 +213,81 @@ void Emit::Visit(const sem::DeclareStmt& n) {
   scope_->Bind(n.name, ty);
 }
 
+void Emit::Visit(const sem::SubscriptLVal& n) {
+  if (write_mode) {
+    if (!single_element_rw_mode) {
+      int stride = GetIndexStride(n.offset);
+      if (stride > 1) {
+        n.ptr->Accept(*this);
+        emit(", ");
+        n.offset->Accept(*this);
+        emit(", ");
+        emit("element_offset_");
+        emit(std::to_string(stride));
+        return;
+      }
+    }
+    n.ptr->Accept(*this);
+    emit(", sizeof(");
+    emitType(write_type);
+    emit(") * ");
+    n.offset->Accept(*this);
+    if (IsVector(n.offset)) {
+      emit("(0)");
+    }
+    return;
+  }
+
+  if (read_mode) {
+    auto s = GetGlobalVarWithOffset(n);
+    if (s.length() > 0 && input_replace_map.find(s) != input_replace_map.end()) {
+      emit(input_replace_map[s]);
+      return;
+    }
+    n.ptr->Accept(*this);
+    auto is_lookup_lval = std::dynamic_pointer_cast<sem::LookupLVal>(n.ptr);
+    emit(".select<");
+    emit(vector_size);
+    emit(", 1>");
+    emit("(");
+    n.offset->Accept(*this);
+    if (large_sparse_vactor.find(is_lookup_lval->name) == large_sparse_vactor.end()) {
+      emit(" * ");
+      emit(vector_size);
+    }
+    emit(")");
+    return;
+  }
+
+  auto s = GetGlobalVarWithOffset(n);
+  if (s.length() > 0 && input_replace_map.find(s) != input_replace_map.end()) {
+    emit(input_replace_map[s]);
+    return;
+  }
+
+  n.ptr->Accept(*this);
+  auto is_lookup_lval = std::dynamic_pointer_cast<sem::LookupLVal>(n.ptr);
+
+  if (!sub_group_broadcast_first_val) {
+    if (vector_stride_map.find(GetLValueName(n.ptr)) == vector_stride_map.end() ||
+        vector_stride_map[GetLValueName(n.ptr)] >= 1) {
+      emit(".select<");
+      emit(vector_size);
+      emit(", 1>");
+    }
+  }
+
+  emit("(");
+  n.offset->Accept(*this);
+  if (large_sparse_vactor.find(is_lookup_lval->name) == large_sparse_vactor.end()) {
+    emit(" * ");
+    emit(vector_size);
+  }
+  if (!sub_group_broadcast_first_val) {
+    emit(")");
+  }
+}
+
 void Emit::Visit(const sem::ClampExpr& n) {
   auto ty_val = TypeOf(n.val);
   auto ty_min = TypeOf(n.min);
@@ -469,7 +354,7 @@ void Emit::Visit(const sem::IndexExpr& n) {
         emit("_i" + std::to_string(n.dim));
         return;
       }
-      if (rw_single_element_mode) {
+      if (single_element_rw_mode) {
         emit("cm_local_id(" + std::to_string(n.dim) + ")");
       } else {
         emit(vector_size);
@@ -485,10 +370,10 @@ void Emit::Visit(const sem::Function& n) {
   emit("extern \"C\" _GENX_MAIN_ ");
 
   if (n.subgroup_size) {
-    rw_single_element_mode = false;
+    single_element_rw_mode = false;
     vector_size = n.subgroup_size;
   } else {
-    rw_single_element_mode = true;
+    single_element_rw_mode = true;
     vector_size = 4;
   }
 
@@ -607,9 +492,9 @@ void Emit::Visit(const sem::CastExpr& n) {
 
 void Emit::Visit(const sem::CallExpr& n) {
   if (n.name == "sub_group_broadcast") {
-    is_sub_group_broadcast_first_val = true;
+    sub_group_broadcast_first_val = true;
     n.vals[0]->Accept(*this);
-    is_sub_group_broadcast_first_val = false;
+    sub_group_broadcast_first_val = false;
     emit(" + ");
     n.vals[1]->Accept(*this);
     emit(")");
@@ -650,7 +535,137 @@ void Emit::Visit(const sem::ForStmt& n) {
 
 void Emit::Visit(const sem::BarrierStmt& n) {}
 
+inline std::string c_dtype(const DataType& dt) {
+  std::string base;
+  switch (dt) {
+    case DataType::BOOLEAN:
+      base = "(bool)";
+      break;
+    case DataType::INT8:
+      base = "(char)";
+      break;
+    case DataType::INT16:
+      base = "(short)";
+      break;
+    case DataType::INT32:
+      base = "(int)";
+      break;
+    case DataType::INT64:
+      base = "(long)";
+      break;
+    case DataType::UINT8:
+      base = "(uchar)";
+      break;
+    case DataType::UINT16:
+      base = "(ushort)";
+      break;
+    case DataType::UINT32:
+      base = "(uint)";
+      break;
+    case DataType::UINT64:
+      base = "(ulong)";
+      break;
+    case DataType::FLOAT16:
+      base = "(half)";
+      break;
+    case DataType::FLOAT32:
+      base = "(float)";
+      break;
+    case DataType::FLOAT64:
+      base = "(double)";
+      break;
+    default:
+      throw std::runtime_error("Invalid tile type");
+  }
+  return base;
+}
+
+void Emit::EmitReadStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs) {
+  emitTab();
+  emit("_read(");
+  read_mode = true;
+  rhs->Accept(*this);
+  emit(", ");
+  lhs->Accept(*this);
+  emit(");\n");
+  read_mode = false;
+}
+
+void Emit::EmitReadStat(const std::string& lhs, const sem::ExprPtr& rhs) {
+  emitTab();
+  emit("_read(");
+  read_mode = true;
+  rhs->Accept(*this);
+  emit(", ");
+  emit(lhs);
+  emit(");\n");
+  read_mode = false;
+}
+
+void Emit::EmitWriteStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs) {
+  emitTab();
+  emit("_write(");
+  write_mode = true;
+  write_type = TypeOf(lhs);
+  lhs->Accept(*this);
+  write_mode = false;
+  emit(", ");
+  rhs->Accept(*this);
+  emit(");\n");
+}
+
+void Emit::EmitWriteStat(const sem::LValPtr& lhs, const std::string& rhs) {
+  emitTab();
+  emit("_write(");
+  write_mode = true;
+  write_type = TypeOf(lhs);
+  lhs->Accept(*this);
+  write_mode = false;
+  emit(", ");
+  emit(rhs);
+  emit(");\n");
+}
+
+void Emit::EmitSingleElementWriteStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs) {
+  emitTab();
+  auto ty_lhs = TypeOf(lhs);
+  switch (ty_lhs.dtype) {
+    case DataType::INT8:
+    case DataType::UINT8:
+    case DataType::INT16:
+    case DataType::UINT16:
+    case DataType::FLOAT16:
+      emit("_write_single_element(");
+      break;
+    case DataType::INT32:
+    case DataType::UINT32:
+    case DataType::FLOAT32:
+      emit("_write_atomic_single_dword(");
+      break;
+    case DataType::INT64:
+      emit("_write_atomic_single_long(");
+      break;
+    default:
+      throw std::runtime_error("EmitSingleElementWriteStat: this data type is not supported!");
+  }
+  write_mode = true;
+  write_type = ty_lhs;
+  lhs->Accept(*this);
+  write_mode = false;
+  emit(", ");
+  auto ty_rhs = TypeOf(rhs);
+  if (c_dtype(ty_lhs.dtype) != c_dtype(ty_rhs.dtype)) {
+    emit(c_dtype(ty_lhs.dtype));
+  }
+  rhs->Accept(*this);
+  if (IsVector(rhs)) {
+    emit("(0)");
+  }
+  emit(");\n");
+}
+
 void Emit::emit(int n) { emit(std::to_string(n)); }
+
 void Emit::emit(size_t size) { emit(std::to_string(size)); }
 
 void Emit::AssignGlobalVarToTemp(const sem::ExprPtr& e) {
