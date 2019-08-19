@@ -105,6 +105,22 @@ local PARAMS = {
             },
 
             {
+              name: 'localize_main',
+              pass: {
+                '@type': 'type.vertex.ai/vertexai.tile.codegen.proto.LocalizePass',
+                reqs: ['main'],
+              },
+            },
+
+            {
+              name: 'scalarize_main',
+              pass: {
+                '@type': 'type.vertex.ai/vertexai.tile.codegen.proto.ScalarizePass',
+                reqs: ['main'],
+              },
+            },
+
+            {
               name: 'tile_contract',
               pass: {
                 '@type': 'type.vertex.ai/vertexai.tile.codegen.proto.AutotilePass',
