@@ -40,6 +40,9 @@ MacroBlockBegin: ''
 MacroBlockEnd:   ''
 MaxEmptyLinesToKeep: 1
 NamespaceIndentation: None
+ObjCBlockIndentWidth: 2
+ObjCSpaceAfterProperty: true
+ObjCSpaceBeforeProtocolList: true
 PenaltyBreakBeforeFirstCallParameter: 1
 PenaltyBreakComment: 300
 PenaltyBreakFirstLessLess: 120
@@ -66,5 +69,8 @@ BasedOnStyle: Google
 ---
 Language: JavaScript
 BasedOnStyle: WebKit
+---
+Language: ObjC
+BasedOnStyle: Google
 ...
 
