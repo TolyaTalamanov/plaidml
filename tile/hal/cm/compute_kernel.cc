@@ -73,14 +73,7 @@ std::shared_ptr<hal::Event> ComputeKernel::Run(const context::Context& ctx,
 
   unsigned int g[3], nthreads[3];
 
-  size_t v_size = 16;
-  if (cm_->vector_size == "8") {
-    v_size = 8;
-  }
-
-  if (cm_->vector_size == "4") {
-    v_size = 4;
-  }
+  size_t vector_size = cm_->vector_size;
 
   const unsigned int threads_num = 48;
 
@@ -94,9 +87,9 @@ std::shared_ptr<hal::Event> ComputeKernel::Run(const context::Context& ctx,
     }
   } else {
     for (int i = 0; i < 3; i++) {
-      nthreads[i] = (ki_.gwork[i] % v_size == 0) ? ki_.gwork[i] / v_size : ki_.gwork[i];
+      nthreads[i] = (ki_.gwork[i] % vector_size == 0) ? ki_.gwork[i] / vector_size : ki_.gwork[i];
       if (ki_.lwork[i]) {
-        g[i] = (ki_.lwork[i] % v_size == 0) ? ki_.lwork[i] / v_size : ki_.lwork[i];
+        g[i] = (ki_.lwork[i] % vector_size == 0) ? ki_.lwork[i] / vector_size : ki_.lwork[i];
       } else {
         g[i] = max_divisor(nthreads[i], threads_num);
       }

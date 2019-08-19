@@ -442,10 +442,10 @@ void Emit::Visit(const sem::DeclareStmt& n) {
   if (n.type.array) {
     if (n.type.array >= 128) {
       large_sparse_vactor.insert(n.name);
-      EmitVector(ty, std::to_string(n.type.array), n.name);
+      EmitVector(ty, n.type.array, n.name);
       // throw std::runtime_error("cm vector exceeds maximum supported size");
     } else {
-      EmitVector(ty, std::to_string(n.type.array) + " * " + vector_size, n.name);
+      EmitVector(ty, n.type.array * vector_size, n.name);
     }
     emit(" = ");
     if (n.init) {
@@ -570,7 +570,10 @@ void Emit::Visit(const sem::ClampExpr& n) {
   emit(")");
 }
 
-void Emit::Visit(const sem::CastExpr& n) { n.val->Accept(*this); }
+void Emit::Visit(const sem::CastExpr& n) {
+  // Since cast is not allowed for cm_vector, basic types casts should be added to anywhere needed.
+  n.val->Accept(*this);
+}
 
 void Emit::Visit(const sem::CallExpr& n) {
   if (n.name == "sub_group_broadcast") {
@@ -586,8 +589,6 @@ void Emit::Visit(const sem::CallExpr& n) {
   if (it != FuncNameMap.end()) {
     emit(it->second);
   } else {
-    // Assume this is an cm function.
-    // TODO: Enumerate the set of callable functions.
     emit(n.name);
   }
   emit("(");
@@ -655,10 +656,10 @@ void Emit::Visit(const sem::Function& n) {
 
   if (n.subgroup_size) {
     use_global_id = false;
-    vector_size = std::to_string(n.subgroup_size);
+    vector_size = n.subgroup_size;
   } else {
     use_global_id = true;
-    vector_size = "4";
+    vector_size = 4;
   }
 
   lang::Scope<sem::Type> scope;
@@ -726,6 +727,8 @@ void Emit::Visit(const sem::Function& n) {
   }
   scope_ = nullptr;
 }
+void Emit::emit(int n) { emit(std::to_string(n)); }
+void Emit::emit(size_t size) { emit(std::to_string(size)); }
 
 inline std::string c_dtype(const DataType& dt) {
   std::string base;
@@ -915,7 +918,7 @@ std::map<std::shared_ptr<sem::LoadExpr>, std::string> Emit::GetGlobalLoadExprMap
   return tv.GetGlobalLoadExprMap();
 }
 
-void Emit::EmitVector(const sem::Type& type, const std::string& size, const std::string& name) {
+void Emit::EmitVector(const sem::Type& type, const size_t& size, const std::string& name) {
   emitTab();
   emit("vector<");
   emitType(type);
@@ -926,7 +929,7 @@ void Emit::EmitVector(const sem::Type& type, const std::string& size, const std:
   tv.vector_params.insert(name);
 }
 
-void Emit::EmitVector(const std::string& type, const std::string& size, const std::string& name) {
+void Emit::EmitVector(const std::string& type, const size_t& size, const std::string& name) {
   emitTab();
   emit("vector<");
   emit(type);

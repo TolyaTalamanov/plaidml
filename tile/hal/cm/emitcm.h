@@ -40,16 +40,16 @@ class Emit : public lang::EmitC {
   void Visit(const sem::BarrierStmt&) final;
   void Visit(const sem::Function&) final;
 
-  static size_t vsize;
+  size_t vector_size = 16;
   bool use_global_id = true;
-  std::string vector_size = "16";
-
-  bool comments_contains_ident = false;
   bool one_eu_mode = false;
 
   TravelVisitor tv;
 
  private:
+  using lang::EmitC::emit;
+  void emit(int n);
+  void emit(size_t size);
   void CheckValidType(const sem::Type& ty);
   sem::Type TypeOf(const sem::ExprPtr& expr);
   sem::Type TypeOf(const sem::LValPtr& lvalue);
@@ -60,8 +60,8 @@ class Emit : public lang::EmitC {
   int GetLocalIndexStride(const sem::ExprPtr& p);
   std::string GetGlobalVarWithOffset(const sem::LValPtr& p);
   std::string GetGlobalVarWithOffset(const sem::LValue& v);
-  void EmitVector(const sem::Type& type, const std::string& size, const std::string& name);
-  void EmitVector(const std::string& type, const std::string& size, const std::string& name);
+  void EmitVector(const sem::Type& type, const size_t& size, const std::string& name);
+  void EmitVector(const std::string& type, const size_t& size, const std::string& name);
   std::map<std::shared_ptr<sem::LoadExpr>, std::string> GetGlobalLoadExprMap(const sem::ExprPtr& p);
 
   std::string GetLValueName(const sem::LValPtr& lv);

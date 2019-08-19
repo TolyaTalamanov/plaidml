@@ -342,11 +342,6 @@ boost::future<std::unique_ptr<hal::Library>> Compiler::Build(const context::Cont
       knames.insert(ki.kfunc->name);
 
       auto pcm = std::make_shared<Emit>(ki);
-
-      if (ki.comments.find("= ident") != std::string::npos) {
-        pcm->comments_contains_ident = true;
-      }
-
       pcm->Visit(*ki.kfunc);
       std::string src = ki.comments + kernel_header.c_str() + pcm->str();
 
