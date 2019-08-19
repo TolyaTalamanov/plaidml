@@ -21,8 +21,8 @@ namespace cm {
 
 void Emit::Visit(const sem::SubscriptLVal& n) {
   if (in_write_statement) {
-    if (!use_global_id) {
-      int stride = GetLocalIndexStride(n.offset);
+    if (!rw_single_element_mode) {
+      int stride = GetIndexStride(n.offset);
       if (stride > 1) {
         n.ptr->Accept(*this);
         emit(", ");
@@ -38,6 +38,9 @@ void Emit::Visit(const sem::SubscriptLVal& n) {
     emitType(write_type);
     emit(") * ");
     n.offset->Accept(*this);
+    if (IsVector(n.offset)) {
+      emit("(0)");
+    }
     return;
   }
 
@@ -86,8 +89,8 @@ void Emit::Visit(const sem::LoadExpr& n) {
   }
   auto inner = std::dynamic_pointer_cast<sem::SubscriptLVal>(n.inner);
   if (inner && GetGlobalVarWithOffset(inner).size() > 0) {
-    if (!use_global_id) {
-      int stride = GetLocalIndexStride(inner->offset);
+    if (!rw_single_element_mode) {
+      int stride = GetIndexStride(inner->offset);
       if (stride > 1) {
         inner->ptr->Accept(*this);
         emit(", ");
@@ -103,6 +106,9 @@ void Emit::Visit(const sem::LoadExpr& n) {
     emitType(ty);
     emit(") * ");
     inner->offset->Accept(*this);
+    if (IsVector(inner->offset)) {
+      emit("(0)");
+    }
   } else {
     n.inner->Accept(*this);
   }
@@ -132,7 +138,7 @@ void Emit::Visit(const sem::StoreStmt& n) {
   if (is_lhs_global && is_rhs_global) {
     AssignGlobalVarToTemp(n.rhs);
 
-    if (use_global_id) {
+    if (rw_single_element_mode) {
       SingleElementWrite(n.lhs, n.rhs);
     } else {
       emitTab();
@@ -153,7 +159,7 @@ void Emit::Visit(const sem::StoreStmt& n) {
 
     AssignGlobalVarToTemp(n.rhs);
 
-    if (use_global_id) {
+    if (rw_single_element_mode) {
       SingleElementWrite(n.lhs, n.rhs);
     } else {
       auto cond_expr = std::dynamic_pointer_cast<sem::CondExpr>(n.rhs);
@@ -205,7 +211,7 @@ void Emit::Visit(const sem::StoreStmt& n) {
       emit(");\n");
       in_read_statement = false;
 
-      auto stride = GetLocalIndexStride(rhs_load_exp);
+      auto stride = GetIndexStride(rhs_load_exp);
       vector_stride_map[GetLValueName(n.lhs)] = stride;
     }
   }
@@ -255,13 +261,13 @@ void Emit::Visit(const sem::DeclareStmt& n) {
 
   if (n.init) {
     if (ty.base == sem::Type::INDEX) {
-      int stride = GetLocalIndexStride(n.init);
+      int stride = GetIndexStride(n.init);
       tv.index_stride_map[n.name] = stride;
 
       if (stride > 1) {
         std::string vname = "element_offset_" + std::to_string(stride);
-        if (element_offset_vector.find(vname) == element_offset_vector.end()) {
-          if (!use_global_id) {
+        if (tv.vector_params.find(vname) == tv.vector_params.end()) {
+          if (!rw_single_element_mode) {
             emitTab();
             emit("cm_vector(");
             emit(vname);
@@ -270,7 +276,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
             emit(", 0, ");
             emit(std::to_string(stride));
             emit(");\n");
-            element_offset_vector.insert(vname);
+            tv.vector_params.insert(vname);
           }
         }
       }
@@ -334,7 +340,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
 
     auto cond_exp = std::dynamic_pointer_cast<sem::CondExpr>(n.init);
     if (cond_exp) {
-      if (IsVector(cond_exp->tcase) || IsVector(cond_exp->fcase) || IsVector(cond_exp->cond)) {
+      if (IsVector(cond_exp)) {
         EmitVector(ty, vector_size, n.name);
         emit(";\n");
 
@@ -362,7 +368,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
 
     auto select_exp = std::dynamic_pointer_cast<sem::SelectExpr>(n.init);
     if (select_exp) {
-      if (IsVector(cond_exp->tcase) || IsVector(cond_exp->fcase) || IsVector(cond_exp->cond)) {
+      if (IsVector(cond_exp)) {
         EmitVector(ty, vector_size, n.name);
         emit(";\n");
 
@@ -390,7 +396,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
 
     auto binary_exp = std::dynamic_pointer_cast<sem::BinaryExpr>(n.init);
     if (binary_exp) {
-      if (IsVector(binary_exp->lhs) || IsVector(binary_exp->rhs)) {
+      if (IsVector(binary_exp)) {
         if (binary_exp->op == ">" || binary_exp->op == "<" || binary_exp->op == ">=" || binary_exp->op == "<=" ||
             binary_exp->op == "==" || binary_exp->op == "!=") {
           EmitVector("char", vector_size, n.name);
@@ -570,6 +576,114 @@ void Emit::Visit(const sem::ClampExpr& n) {
   emit(")");
 }
 
+void Emit::Visit(const sem::IndexExpr& n) {
+  switch (n.type) {
+    case sem::IndexExpr::GLOBAL:
+      if (single_eu_mode) {
+        emit("_i" + std::to_string(n.dim));
+        return;
+      }
+      emit("(cm_local_size(" + std::to_string(n.dim) + ")");
+      emit(" * cm_group_id(" + std::to_string(n.dim) + ")");
+      emit(" + cm_local_id(" + std::to_string(n.dim) + "))");
+      break;
+    case sem::IndexExpr::GROUP:
+      emit("cm_group_id(" + std::to_string(n.dim) + ")");
+      break;
+    case sem::IndexExpr::LOCAL:
+      if (single_eu_mode) {
+        emit("_i" + std::to_string(n.dim));
+        return;
+      }
+      if (rw_single_element_mode) {
+        emit("cm_local_id(" + std::to_string(n.dim) + ")");
+      } else {
+        emit(vector_size);
+        emit(" * cm_local_id(" + std::to_string(n.dim) + ")");
+      }
+      break;
+    default:
+      throw std::runtime_error("Invalid IndexExpr type");
+  }
+}
+
+void Emit::Visit(const sem::Function& n) {
+  emit("extern \"C\" _GENX_MAIN_ ");
+
+  if (n.subgroup_size) {
+    rw_single_element_mode = false;
+    vector_size = n.subgroup_size;
+  } else {
+    rw_single_element_mode = true;
+    vector_size = 4;
+  }
+
+  lang::Scope<sem::Type> scope;
+  scope_ = &scope;
+
+  single_eu_mode = false;
+  for (const auto& p : n.params) {
+    auto ty = p.first;
+    if (ty.dtype == DataType::BOOLEAN) {
+      ty.dtype = DataType::INT8;
+    }
+    if (ty.dtype == DataType::INT8 || ty.dtype == DataType::UINT8 || ty.dtype == DataType::INT16 ||
+        ty.dtype == DataType::UINT16) {
+      single_eu_mode = true;
+    }
+    CheckValidType(ty);
+    scope.Bind(p.second, ty);
+    tv.global_params.insert(p.second);
+    tv.vector_params.insert(p.second);
+  }
+
+  emitType(n.ret);
+  emit(" ");
+  emit(n.name);
+  emit("(");
+  bool first_param = true;
+  for (const auto& p : n.params) {
+    if (first_param) {
+      first_param = false;
+    } else {
+      emit(", ");
+    }
+    emit("SurfaceIndex");
+    emit(" ");
+    emit(p.second);
+  }
+  emit(")\n");
+
+  if (single_eu_mode) {
+    int g0 = ki_.gwork[0];
+    int g1 = ki_.gwork[1];
+    int g2 = ki_.gwork[2];
+    emit("{\n");
+    ++indent_;
+    emitTab();
+    emit("if(cm_local_id(0) == 0 && cm_group_id(0) == 0){\n");
+    ++indent_;
+    emitTab();
+    emit("for(int _i0=0;_i0<" + std::to_string(g0) + ";_i0++){\n");
+    ++indent_;
+    emitTab();
+    emit("for(int _i1=0;_i1<" + std::to_string(g1) + ";_i1++){\n");
+    ++indent_;
+    emitTab();
+    emit("for(int _i2=0;_i2<" + std::to_string(g2) + ";_i2++){\n");
+    n.body->Accept(*this);
+
+    for (int i = 0; i < 5; i++) {
+      emitTab();
+      emit("}\n");
+      --indent_;
+    }
+  } else {
+    n.body->Accept(*this);
+  }
+  scope_ = nullptr;
+}
+
 void Emit::Visit(const sem::CastExpr& n) {
   // Since cast is not allowed for cm_vector, basic types casts should be added to anywhere needed.
   n.val->Accept(*this);
@@ -601,37 +715,6 @@ void Emit::Visit(const sem::CallExpr& n) {
   emit(")");
 }
 
-void Emit::Visit(const sem::IndexExpr& n) {
-  switch (n.type) {
-    case sem::IndexExpr::GLOBAL:
-      if (one_eu_mode) {
-        emit("_i" + std::to_string(n.dim));
-        return;
-      }
-      emit("(cm_local_size(" + std::to_string(n.dim) + ")");
-      emit(" * cm_group_id(" + std::to_string(n.dim) + ")");
-      emit(" + cm_local_id(" + std::to_string(n.dim) + "))");
-      break;
-    case sem::IndexExpr::GROUP:
-      emit("cm_group_id(" + std::to_string(n.dim) + ")");
-      break;
-    case sem::IndexExpr::LOCAL:
-      if (one_eu_mode) {
-        emit("_i" + std::to_string(n.dim));
-        return;
-      }
-      if (use_global_id) {
-        emit("cm_local_id(" + std::to_string(n.dim) + ")");
-      } else {
-        emit(vector_size);
-        emit(" * cm_local_id(" + std::to_string(n.dim) + ")");
-      }
-      break;
-    default:
-      throw std::runtime_error("Invalid IndexExpr type");
-  }
-}
-
 void Emit::Visit(const sem::Block& n) {
   auto previous_scope = scope_;
   lang::Scope<sem::Type> scope{scope_};
@@ -651,82 +734,6 @@ void Emit::Visit(const sem::ForStmt& n) {
 
 void Emit::Visit(const sem::BarrierStmt& n) {}
 
-void Emit::Visit(const sem::Function& n) {
-  emit("extern \"C\" _GENX_MAIN_ ");
-
-  if (n.subgroup_size) {
-    use_global_id = false;
-    vector_size = n.subgroup_size;
-  } else {
-    use_global_id = true;
-    vector_size = 4;
-  }
-
-  lang::Scope<sem::Type> scope;
-  scope_ = &scope;
-
-  one_eu_mode = false;
-  for (const auto& p : n.params) {
-    auto ty = p.first;
-    if (ty.dtype == DataType::BOOLEAN) {
-      ty.dtype = DataType::INT8;
-    }
-    if (ty.dtype == DataType::INT8 || ty.dtype == DataType::UINT8 || ty.dtype == DataType::INT16 ||
-        ty.dtype == DataType::UINT16) {
-      one_eu_mode = true;
-    }
-    CheckValidType(ty);
-    scope.Bind(p.second, ty);
-    tv.global_params.insert(p.second);
-    tv.vector_params.insert(p.second);
-  }
-
-  emitType(n.ret);
-  emit(" ");
-  emit(n.name);
-  emit("(");
-  bool first_param = true;
-  for (const auto& p : n.params) {
-    if (first_param) {
-      first_param = false;
-    } else {
-      emit(", ");
-    }
-    emit("SurfaceIndex");
-    emit(" ");
-    emit(p.second);
-  }
-  emit(")\n");
-
-  if (one_eu_mode) {
-    int g0 = ki_.gwork[0];
-    int g1 = ki_.gwork[1];
-    int g2 = ki_.gwork[2];
-    emit("{\n");
-    ++indent_;
-    emitTab();
-    emit("if(cm_local_id(0) == 0 && cm_group_id(0) == 0){\n");
-    ++indent_;
-    emitTab();
-    emit("for(int _i0=0;_i0<" + std::to_string(g0) + ";_i0++){\n");
-    ++indent_;
-    emitTab();
-    emit("for(int _i1=0;_i1<" + std::to_string(g1) + ";_i1++){\n");
-    ++indent_;
-    emitTab();
-    emit("for(int _i2=0;_i2<" + std::to_string(g2) + ";_i2++){\n");
-    n.body->Accept(*this);
-
-    for (int i = 0; i < 5; i++) {
-      emitTab();
-      emit("}\n");
-      --indent_;
-    }
-  } else {
-    n.body->Accept(*this);
-  }
-  scope_ = nullptr;
-}
 void Emit::emit(int n) { emit(std::to_string(n)); }
 void Emit::emit(size_t size) { emit(std::to_string(size)); }
 
@@ -888,13 +895,13 @@ bool Emit::IsVector(const sem::LValue& v) {
   return tv.CheckVector();
 }
 
-int Emit::GetLocalIndexStride(const sem::ExprPtr& p) {
+int Emit::GetIndexStride(const sem::ExprPtr& p) {
   tv.InitIndexStride();
   p->Accept(tv);
   return tv.GetIndexStride();
 }
 
-int Emit::GetLocalIndexStride(const sem::LValPtr& p) {
+int Emit::GetIndexStride(const sem::LValPtr& p) {
   tv.InitIndexStride();
   p->Accept(tv);
   return tv.GetIndexStride();

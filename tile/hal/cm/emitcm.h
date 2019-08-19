@@ -40,9 +40,9 @@ class Emit : public lang::EmitC {
   void Visit(const sem::BarrierStmt&) final;
   void Visit(const sem::Function&) final;
 
-  size_t vector_size = 16;
-  bool use_global_id = true;
-  bool one_eu_mode = false;
+  size_t vector_size;
+  bool rw_single_element_mode;
+  bool single_eu_mode;
 
   TravelVisitor tv;
 
@@ -50,14 +50,16 @@ class Emit : public lang::EmitC {
   using lang::EmitC::emit;
   void emit(int n);
   void emit(size_t size);
+
   void CheckValidType(const sem::Type& ty);
   sem::Type TypeOf(const sem::ExprPtr& expr);
   sem::Type TypeOf(const sem::LValPtr& lvalue);
+
   bool IsVector(const sem::ExprPtr& p);
   bool IsVector(const sem::LValPtr& p);
   bool IsVector(const sem::LValue& v);
-  int GetLocalIndexStride(const sem::LValPtr& p);
-  int GetLocalIndexStride(const sem::ExprPtr& p);
+  int GetIndexStride(const sem::LValPtr& p);
+  int GetIndexStride(const sem::ExprPtr& p);
   std::string GetGlobalVarWithOffset(const sem::LValPtr& p);
   std::string GetGlobalVarWithOffset(const sem::LValue& v);
   void EmitVector(const sem::Type& type, const size_t& size, const std::string& name);
@@ -69,9 +71,7 @@ class Emit : public lang::EmitC {
   void AssignGlobalVarToTemp(const sem::ExprPtr& e);
 
   std::map<std::string, int> vector_stride_map;
-  std::set<std::string> element_offset_vector;
 
-  lang::Scope<sem::Type>* scope_;
   bool is_sub_group_broadcast_first_val = false;
   bool in_read_statement = false;
   bool in_write_statement = false;
@@ -79,6 +79,8 @@ class Emit : public lang::EmitC {
   int temp_var_num = 0;
   std::map<std::string, std::string> input_replace_map;
   std::set<std::string> large_sparse_vactor;
+
+  lang::Scope<sem::Type>* scope_;
   lang::KernelInfo ki_;
 };
 

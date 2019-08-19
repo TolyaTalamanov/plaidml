@@ -77,7 +77,7 @@ std::shared_ptr<hal::Event> ComputeKernel::Run(const context::Context& ctx,
 
   const unsigned int threads_num = 48;
 
-  if (cm_->use_global_id) {
+  if (cm_->rw_single_element_mode) {
     int max_threads_num = threads_num;
     for (int i = 0; i < 3; i++) {
       nthreads[i] = ki_.gwork[i];
