@@ -93,6 +93,18 @@ local PARAMS = {
             },
 
             {
+              name: 'fuse_eltwise_eltwise',
+              pass: {
+                '@type': 'type.vertex.ai/vertexai.tile.codegen.proto.FusionPass',
+                parent_reqs: ['main'],
+                a_reqs: ['eltwise'],
+                b_reqs: ['eltwise'],
+                inner_remove_set: ['kernel'],
+                output_match: true,
+              }
+            },
+
+            {
               name: 'tile_contract',
               pass: {
                 '@type': 'type.vertex.ai/vertexai.tile.codegen.proto.AutotilePass',
@@ -125,18 +137,6 @@ local PARAMS = {
                 min_out_count: PARAMS[cfg].NUM_UNITS,
                 split_factor: -100.0,
                 only_po2: true,
-              }
-            },
-
-            {
-              name: 'fuse_eltwise_eltwise',
-              pass: {
-                '@type': 'type.vertex.ai/vertexai.tile.codegen.proto.FusionPass',
-                parent_reqs: ['main'],
-                a_reqs: ['eltwise'],
-                b_reqs: ['eltwise'],
-                inner_remove_set: ['kernel'],
-                output_match: true,
               }
             },
 
