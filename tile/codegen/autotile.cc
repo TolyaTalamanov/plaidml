@@ -138,6 +138,7 @@ std::string CommonRefinement(const Block& block, Block* next_block,
   for (auto next_ref : next_block->ref_ins(true)) {
     next_ins.insert(next_ref->from);
   }
+  idx_map->clear();
   for (auto block_ref : block.ref_outs(true)) {
     if (next_ins.find(block_ref->from) == next_ins.end()) {
       continue;
@@ -153,8 +154,23 @@ std::string CommonRefinement(const Block& block, Block* next_block,
     size_t n_dim = block_ref->access.size();
     bool failed = false;
     for (size_t i = 0; i < n_dim; ++i) {
+      if (block_ref->access[i] == Affine() || next_ref_it->access[i] == Affine()) {
+        if (block_ref->access[i] != next_ref_it->access[i]) {
+          failed = true;
+          break;
+        }
+        continue;
+      }
       const std::string& block_idx_name = block_ref->access[i].getMap().begin()->first;
       const std::string& next_idx_name = next_ref_it->access[i].getMap().begin()->first;
+      // For constant access
+      if (block_idx_name == "" || next_idx_name == "") {
+        if (block_idx_name != next_idx_name) {
+          failed = true;
+          break;
+        }
+        continue;
+      }
       const Index* block_idx = block.idx_by_name(block_idx_name);
       const Index* next_idx = next_block->idx_by_name(next_idx_name);
       if (block_idx->range == next_idx->range) {
@@ -503,8 +519,10 @@ void AutotilePass::Apply(CompilerState* state) const {
       }
     }
     ComputeDensityCostModel model(*block, options_);
+    Block* real_next_block = (options_.next_block_tag() == "") ? nullptr :
+                             (next_block->has_tag(options_.next_block_tag()) ? next_block : nullptr);
     auto result = PickBestTile(*block, options_.only_po2(), options_.only_even(), options_.only_multiple_of_32(),
-                               options_.fast(), options_.next_block() ? next_block : nullptr, model);
+                               options_.fast(), real_next_block, model);
     if (result) {
       IVLOG(2, "Autotile> block: " << block->name << ", tile: " << result->tile << ", cost: " << result->cost);
       const TileShape& tiling_shape = options_.flip() ? result->tile.counts() : result->tile.sizes();
@@ -547,8 +565,10 @@ void PartitionComputePass::Apply(CompilerState* state) const {
   auto reqs = FromProto(options_.reqs());
   RunOnBlocksWithNext(state->entry(), reqs, [this](const AliasMap& map, Block* block, Block* next_block) {
     PartitionComputeCostModel model(*block, options_);
+    Block* real_next_block = (options_.next_block_tag() == "") ? nullptr :
+                             (next_block->has_tag(options_.next_block_tag()) ? next_block : nullptr);
     auto result = PickBestTile(*block, false, false, options_.only_multiple_of_32(), false,
-                  options_.next_block() ? next_block : nullptr, model);
+                  real_next_block, model);
     if (result) {
       IVLOG(2, "PartitionCompute> block: " << block->name                 //
                                            << ", tile: " << result->tile  //

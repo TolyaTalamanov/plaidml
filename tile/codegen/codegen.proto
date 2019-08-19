@@ -471,8 +471,9 @@ message AutotilePass {
   repeated string exclude = 36;
   // If the tiling is interleaved
   optional bool interleave = 37 [default = false];
-  // If taking the next block into account
-  optional bool next_block = 38 [default = false];
+  // If taking the next block into account. "" for not considering the next block.
+  // Otherwise the next block needs the tag next_block_tag
+  optional string next_block_tag = 38 [default = ""];
 }
 
 // A pass that attempts to transpose intermediate buffers such that any
@@ -503,8 +504,9 @@ message PartitionComputePass {
   // Only consider tilings whose sizes are multiples of 32.
   // This is primarily required for some arch.
   optional bool only_multiple_of_32 = 5 [default = false];
-  // If taking next block into account
-  optional bool next_block = 6 [default = false];
+  // If taking next block into account. "" for not considering the next block.
+  // Otherwise the next block needs the tag next_block_tag
+  optional string next_block_tag = 6 [default = ""];
 }
 
 // The partition pass splits a single block into an 'outer' and inner block so

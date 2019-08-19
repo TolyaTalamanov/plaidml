@@ -133,6 +133,7 @@ local PARAMS = {
                 acc_idxs: true,
                 only_po2: true,
                 odd_size: true,
+                next_block_tag: "eltwise",
                 min_out_count: PARAMS[cfg].NUM_UNITS,
                 max_local_size: PARAMS[cfg].LOCAL_MEM_KIB * 1024,
                 max_sizes_product: PARAMS[cfg].NUM_THREADS * 64,
