@@ -261,27 +261,22 @@ void Emit::Visit(const sem::DeclareStmt& n) {
     }
 
     auto load_exp = std::dynamic_pointer_cast<sem::LoadExpr>(n.init);
+    auto s = GetGlobalVarWithOffset(n.init);
     if (load_exp) {
-      if (!IsVector(n.init) && GetGlobalVarWithOffset(n.init).size() == 0) {
-        emitTab();
-        emitType(ty);
-        emit(" ");
-        emit(n.name);
-
-        if (n.init) {
-          emit(" = ");
-          n.init->Accept(*this);
-        }
+      if (IsVector(n.init) && s.size() == 0) {
+        EmitVector(ty, vector_size, n.name);
         emit(";\n");
 
-        CheckValidType(ty);
-        scope_->Bind(n.name, ty);
-        return;
+        emitTab();
+        emit(n.name);
+        emit(" = ");
+        n.init->Accept(*this);
+        emit(";\n");
       }
-      EmitVector(ty, vector_size, n.name);
-      emit(";\n");
+      if (IsVector(n.init) && s.size() > 0) {
+        EmitVector(ty, vector_size, n.name);
+        emit(";\n");
 
-      if (GetGlobalVarWithOffset(n.init).size() > 0) {
         emitTab();
         emit("_read(");
         in_read_statement = true;
@@ -290,8 +285,11 @@ void Emit::Visit(const sem::DeclareStmt& n) {
         emit(n.name);
         emit(");\n");
         in_read_statement = false;
-      } else {
+      }
+      if (!IsVector(n.init) && s.size() == 0) {
         emitTab();
+        emitType(ty);
+        emit(" ");
         emit(n.name);
         emit(" = ");
         n.init->Accept(*this);
@@ -302,19 +300,31 @@ void Emit::Visit(const sem::DeclareStmt& n) {
       return;
     }
 
-    auto cast_exp = std::dynamic_pointer_cast<sem::CastExpr>(n.init);
-    if (cast_exp) {
-      EmitVector(ty, vector_size, n.name);
-      emit(";\n");
+    auto binary_exp = std::dynamic_pointer_cast<sem::BinaryExpr>(n.init);
+    if (binary_exp) {
+      if (binary_exp->op == ">" || binary_exp->op == "<" || binary_exp->op == ">=" || binary_exp->op == "<=" ||
+          binary_exp->op == "==" || binary_exp->op == "!=") {
+        ty.dtype = DataType::INT8;
+      }
+    }
 
-      emitTab();
-      emit(n.name);
-      emit(" = ");
-      n.init->Accept(*this);
-      emit(";\n");
-      CheckValidType(ty);
-      scope_->Bind(n.name, ty);
-      return;
+    auto cast_exp = std::dynamic_pointer_cast<sem::CastExpr>(n.init);
+    auto call_expr = std::dynamic_pointer_cast<sem::CallExpr>(n.init);
+    auto unary_expr = std::dynamic_pointer_cast<sem::UnaryExpr>(n.init);
+    if (binary_exp || cast_exp || call_expr || unary_expr) {
+      if (IsVector(n.init)) {
+        EmitVector(ty, vector_size, n.name);
+        emit(";\n");
+
+        emitTab();
+        emit(n.name);
+        emit(" = ");
+        n.init->Accept(*this);
+        emit(";\n");
+        CheckValidType(ty);
+        scope_->Bind(n.name, ty);
+        return;
+      }
     }
 
     auto cond_exp = std::dynamic_pointer_cast<sem::CondExpr>(n.init);
@@ -338,54 +348,6 @@ void Emit::Visit(const sem::DeclareStmt& n) {
         n.init->Accept(*this);
         emit(";\n");
       }
-      CheckValidType(ty);
-      scope_->Bind(n.name, ty);
-      return;
-    }
-
-    auto binary_exp = std::dynamic_pointer_cast<sem::BinaryExpr>(n.init);
-    if (binary_exp) {
-      if (IsVector(binary_exp)) {
-        if (binary_exp->op == ">" || binary_exp->op == "<" || binary_exp->op == ">=" || binary_exp->op == "<=" ||
-            binary_exp->op == "==" || binary_exp->op == "!=") {
-          ty.dtype = DataType::INT8;
-          EmitVector(ty, vector_size, n.name);
-        } else {
-          EmitVector(ty, vector_size, n.name);
-        }
-
-        emit(" = ");
-        n.init->Accept(*this);
-        emit(";\n");
-        CheckValidType(ty);
-        scope_->Bind(n.name, ty);
-        return;
-      }
-    }
-
-    auto call_expr = std::dynamic_pointer_cast<sem::CallExpr>(n.init);
-    if (call_expr) {
-      for (auto val : call_expr->vals) {
-        if (IsVector(val)) {
-          EmitVector(ty, vector_size, n.name);
-          emit(" = ");
-
-          call_expr->Accept(*this);
-          emit(";\n");
-          CheckValidType(ty);
-          scope_->Bind(n.name, ty);
-          return;
-        }
-      }
-    }
-
-    auto unary_expr = std::dynamic_pointer_cast<sem::UnaryExpr>(n.init);
-    if (unary_expr && IsVector(n.init)) {
-      EmitVector(ty, vector_size, n.name);
-      emit(" = ");
-
-      n.init->Accept(*this);
-      emit(";\n");
       CheckValidType(ty);
       scope_->Bind(n.name, ty);
       return;
