@@ -262,39 +262,32 @@ void Emit::Visit(const sem::DeclareStmt& n) {
 
     auto load_exp = std::dynamic_pointer_cast<sem::LoadExpr>(n.init);
     auto s = GetGlobalVarWithOffset(n.init);
-    if (load_exp) {
-      if (IsVector(n.init) && s.size() == 0) {
-        EmitVector(ty, vector_size, n.name);
-        emit(";\n");
+    if (load_exp && s.size() > 0) {
+      EmitVector(ty, vector_size, n.name);
+      emit(";\n");
 
-        emitTab();
-        emit(n.name);
-        emit(" = ");
-        n.init->Accept(*this);
-        emit(";\n");
-      }
-      if (IsVector(n.init) && s.size() > 0) {
-        EmitVector(ty, vector_size, n.name);
-        emit(";\n");
+      emitTab();
+      emit("_read(");
+      in_read_statement = true;
+      n.init->Accept(*this);
+      emit(", ");
+      emit(n.name);
+      emit(");\n");
+      in_read_statement = false;
+      CheckValidType(ty);
+      scope_->Bind(n.name, ty);
+      return;
+    }
 
-        emitTab();
-        emit("_read(");
-        in_read_statement = true;
-        n.init->Accept(*this);
-        emit(", ");
-        emit(n.name);
-        emit(");\n");
-        in_read_statement = false;
-      }
-      if (!IsVector(n.init) && s.size() == 0) {
-        emitTab();
-        emitType(ty);
-        emit(" ");
-        emit(n.name);
-        emit(" = ");
-        n.init->Accept(*this);
-        emit(";\n");
-      }
+    if (n.type.array) {
+      EmitVector(ty, n.type.array * vector_size, n.name);
+      emit(";\n");
+
+      emitTab();
+      emit(n.name);
+      emit(" = ");
+      n.init->Accept(*this);
+      emit(";\n");
       CheckValidType(ty);
       scope_->Bind(n.name, ty);
       return;
@@ -308,78 +301,42 @@ void Emit::Visit(const sem::DeclareStmt& n) {
       }
     }
 
-    auto cast_exp = std::dynamic_pointer_cast<sem::CastExpr>(n.init);
-    auto call_expr = std::dynamic_pointer_cast<sem::CallExpr>(n.init);
-    auto unary_expr = std::dynamic_pointer_cast<sem::UnaryExpr>(n.init);
-    if (binary_exp || cast_exp || call_expr || unary_expr) {
-      if (IsVector(n.init)) {
-        EmitVector(ty, vector_size, n.name);
-        emit(";\n");
-
-        emitTab();
-        emit(n.name);
-        emit(" = ");
-        n.init->Accept(*this);
-        emit(";\n");
-        CheckValidType(ty);
-        scope_->Bind(n.name, ty);
-        return;
-      }
-    }
-
     auto cond_exp = std::dynamic_pointer_cast<sem::CondExpr>(n.init);
     auto select_exp = std::dynamic_pointer_cast<sem::SelectExpr>(n.init);
-    if (cond_exp || select_exp) {
-      if (IsVector(n.init)) {
-        EmitVector(ty, vector_size, n.name);
-        emit(";\n");
+    std::string op = (cond_exp || select_exp) ? "." : " = ";
 
-        emitTab();
-        emit(n.name);
-        emit(".");
-        n.init->Accept(*this);
-        emit(";\n");
-      } else {
-        emitTab();
-        emitType(ty);
-        emit(" ");
-        emit(n.name);
-        emit(".");
-        n.init->Accept(*this);
-        emit(";\n");
-      }
-      CheckValidType(ty);
-      scope_->Bind(n.name, ty);
-      return;
+    if (IsVector(n.init)) {
+      EmitVector(ty, vector_size, n.name);
+      emit(";\n");
+
+      emitTab();
+      emit(n.name);
+      emit(op);
+      n.init->Accept(*this);
+      emit(";\n");
+    } else {
+      emitTab();
+      emitType(ty);
+      emit(" ");
+      emit(n.name);
+      emit(op);
+      n.init->Accept(*this);
+      emit(";\n");
     }
+
+    CheckValidType(ty);
+    scope_->Bind(n.name, ty);
+    return;
   }
 
   if (n.type.array) {
-    if (n.type.array >= 128) {
-      large_sparse_vactor.insert(n.name);
-      EmitVector(ty, n.type.array, n.name);
-      // throw std::runtime_error("cm vector exceeds maximum supported size");
-    } else {
-      EmitVector(ty, n.type.array * vector_size, n.name);
-    }
-    emit(" = ");
-    if (n.init) {
-      n.init->Accept(*this);
-    } else {
-      emit("0");
-    }
-    emit(";\n");
-
+    EmitVector(ty, n.type.array * vector_size, n.name);
+    emit(" = 0;\n");
   } else {
     emitTab();
     emitType(ty);
     emit(" ");
     emit(n.name);
-
-    if (n.init) {
-      emit(" = ");
-      n.init->Accept(*this);
-    }
     emit(";\n");
   }
 
@@ -839,6 +796,11 @@ std::map<std::shared_ptr<sem::LoadExpr>, std::string> Emit::GetGlobalLoadExprMap
 }
 
 void Emit::EmitVector(const sem::Type& type, const size_t& size, const std::string& name) {
+  if (size >= 128 * 16) {
+    large_sparse_vactor.insert(name);
+    EmitVector(type, size / 16, name);
+    return;
+  }
   emitTab();
   emit("vector<");
   emitType(type);
