@@ -58,8 +58,10 @@ class Emit : public lang::EmitC {
   bool IsVector(const sem::ExprPtr& p);
   bool IsVector(const sem::LValPtr& p);
   bool IsVector(const sem::LValue& v);
-  int GetIndexStride(const sem::LValPtr& p);
   int GetIndexStride(const sem::ExprPtr& p);
+  int GetIndexStride(const sem::LValPtr& p);
+  int GetIndexStride(const sem::LValue& p);
+  std::string GetGlobalVarWithOffset(const sem::ExprPtr& p);
   std::string GetGlobalVarWithOffset(const sem::LValPtr& p);
   std::string GetGlobalVarWithOffset(const sem::LValue& v);
   void EmitVector(const sem::Type& type, const size_t& size, const std::string& name);

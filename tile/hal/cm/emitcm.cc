@@ -200,20 +200,17 @@ void Emit::Visit(const sem::StoreStmt& n) {
   }
 
   if (!is_lhs_global && is_rhs_global) {
-    auto rhs_load_exp = std::dynamic_pointer_cast<sem::LoadExpr>(n.rhs);
-    if (rhs_load_exp) {
-      emitTab();
-      emit("_read(");
-      in_read_statement = true;
-      rhs_load_exp->Accept(*this);
-      emit(", ");
-      n.lhs->Accept(*this);
-      emit(");\n");
-      in_read_statement = false;
+    emitTab();
+    emit("_read(");
+    in_read_statement = true;
+    n.rhs->Accept(*this);
+    emit(", ");
+    n.lhs->Accept(*this);
+    emit(");\n");
+    in_read_statement = false;
 
-      auto stride = GetIndexStride(rhs_load_exp);
-      vector_stride_map[GetLValueName(n.lhs)] = stride;
-    }
+    auto stride = GetIndexStride(n.rhs);
+    vector_stride_map[GetLValueName(n.lhs)] = stride;
   }
 
   if (!is_lhs_global && !is_rhs_global) {
@@ -236,27 +233,9 @@ void Emit::Visit(const sem::StoreStmt& n) {
 
 void Emit::Visit(const sem::DeclareStmt& n) {
   sem::Type ty = n.type;
-  sem::Type init_type;
-  if (n.init) {
-    init_type = TypeOf(n.init);
-  }
 
-  if (ty.base == sem::Type::VALUE) {
-    if (ty.dtype == DataType::FLOAT16) {
-      // ty.dtype = DataType::FLOAT32;
-    } else if (ty.dtype == DataType::BOOLEAN) {
-      if (n.init) {
-        ty.dtype = lang::Promote({init_type}).dtype;
-        if (ty.dtype == DataType::BOOLEAN) {
-          // If the initializer was booleans, make it INT8.
-          ty.dtype = DataType::INT8;
-        }
-      } else {
-        // Assume that this is being initialized from an inter-kernel
-        // boolean tensor -- which, in cm, we represent as INT8.
-        ty.dtype = DataType::INT8;
-      }
-    }
+  if (ty.dtype == DataType::BOOLEAN) {
+    ty.dtype = DataType::INT8;
   }
 
   if (n.init) {
@@ -284,7 +263,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
 
     auto load_exp = std::dynamic_pointer_cast<sem::LoadExpr>(n.init);
     if (load_exp) {
-      if (!IsVector(load_exp->inner) && GetGlobalVarWithOffset(load_exp->inner).size() == 0) {
+      if (!IsVector(n.init) && GetGlobalVarWithOffset(n.init).size() == 0) {
         emitTab();
         emitType(ty);
         emit(" ");
@@ -303,11 +282,11 @@ void Emit::Visit(const sem::DeclareStmt& n) {
       EmitVector(ty, vector_size, n.name);
       emit(";\n");
 
-      if (GetGlobalVarWithOffset(load_exp->inner).size() > 0) {
+      if (GetGlobalVarWithOffset(n.init).size() > 0) {
         emitTab();
         emit("_read(");
         in_read_statement = true;
-        load_exp->Accept(*this);
+        n.init->Accept(*this);
         emit(", ");
         emit(n.name);
         emit(");\n");
@@ -316,7 +295,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
         emitTab();
         emit(n.name);
         emit(" = ");
-        load_exp->Accept(*this);
+        n.init->Accept(*this);
         emit(";\n");
       }
       CheckValidType(ty);
@@ -330,7 +309,7 @@ void Emit::Visit(const sem::DeclareStmt& n) {
       if (load_exp) {
         EmitVector(ty, vector_size, n.name);
         emit(" = ");
-        load_exp->Accept(*this);
+        n.init->Accept(*this);
         emit(";\n");
         CheckValidType(ty);
         scope_->Bind(n.name, ty);
@@ -476,56 +455,6 @@ void Emit::Visit(const sem::DeclareStmt& n) {
 
   CheckValidType(ty);
   scope_->Bind(n.name, ty);
-}
-
-void Emit::Visit(const sem::CondExpr& n) {
-  auto type = TypeOf(n.cond);
-
-  emit("merge(");
-  n.tcase->Accept(*this);
-  emit(", ");
-  n.fcase->Accept(*this);
-  emit(", ");
-  if (type.dtype != DataType::INT8) {
-    auto load_exp = std::dynamic_pointer_cast<sem::LoadExpr>(n.cond);
-    if (load_exp && IsVector(load_exp->inner)) {
-      emit("vector<char,");
-      emit(vector_size);
-      emit(">(");
-      n.cond->Accept(*this);
-      emit(")");
-    } else {
-      n.cond->Accept(*this);
-    }
-  } else {
-    n.cond->Accept(*this);
-  }
-  emit(")");
-}
-
-void Emit::Visit(const sem::SelectExpr& n) {
-  auto type = TypeOf(n.cond);
-
-  emit("merge(");
-  n.tcase->Accept(*this);
-  emit(", ");
-  n.fcase->Accept(*this);
-  emit(", ");
-  if (type.dtype != DataType::INT8) {
-    auto load_exp = std::dynamic_pointer_cast<sem::LoadExpr>(n.cond);
-    if (load_exp && IsVector(load_exp->inner)) {
-      emit("vector<char,");
-      emit(vector_size);
-      emit(">(");
-      n.cond->Accept(*this);
-      emit(")");
-    } else {
-      n.cond->Accept(*this);
-    }
-  } else {
-    n.cond->Accept(*this);
-  }
-  emit(")");
 }
 
 void Emit::Visit(const sem::ClampExpr& n) {
@@ -682,6 +611,48 @@ void Emit::Visit(const sem::Function& n) {
     n.body->Accept(*this);
   }
   scope_ = nullptr;
+}
+
+void Emit::Visit(const sem::CondExpr& n) {
+  auto type = TypeOf(n.cond);
+  emit("merge(");
+  n.tcase->Accept(*this);
+  emit(", ");
+  n.fcase->Accept(*this);
+  emit(", ");
+
+  if (IsVector(n.cond)) {
+    emit("vector<char,");
+    emit(vector_size);
+    emit(">(");
+    n.cond->Accept(*this);
+    emit(")");
+  } else {
+    n.cond->Accept(*this);
+  }
+
+  emit(")");
+}
+
+void Emit::Visit(const sem::SelectExpr& n) {
+  auto type = TypeOf(n.cond);
+  emit("merge(");
+  n.tcase->Accept(*this);
+  emit(", ");
+  n.fcase->Accept(*this);
+  emit(", ");
+
+  if (IsVector(n.cond)) {
+    emit("vector<char,");
+    emit(vector_size);
+    emit(">(");
+    n.cond->Accept(*this);
+    emit(")");
+  } else {
+    n.cond->Accept(*this);
+  }
+
+  emit(")");
 }
 
 void Emit::Visit(const sem::CastExpr& n) {
@@ -905,6 +876,18 @@ int Emit::GetIndexStride(const sem::LValPtr& p) {
   tv.InitIndexStride();
   p->Accept(tv);
   return tv.GetIndexStride();
+}
+
+int Emit::GetIndexStride(const sem::LValue& v) {
+  tv.InitIndexStride();
+  v.Accept(tv);
+  return tv.GetIndexStride();
+}
+
+std::string Emit::GetGlobalVarWithOffset(const sem::ExprPtr& p) {
+  tv.InitGlobalVarWithOffset();
+  p->Accept(tv);
+  return tv.GetGlobalVarWithOffset();
 }
 
 std::string Emit::GetGlobalVarWithOffset(const sem::LValPtr& p) {

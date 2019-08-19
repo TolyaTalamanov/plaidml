@@ -108,7 +108,7 @@ std::string kernel_header =  // NOLINT
 #define _ln2 0.69314718055995
 
 #define _CEIL(_N)	cmtl::cm_ceil<float,4>(_N,0)
-#define _FLOOR(_N)  cmtl::cm_floor<float,4>(_N,0)
+#define _FLOOR(_N)	cmtl::cm_floor<float,4>(_N,0)
 #define _EXP(_N)	cm_pow(_E,_N,0)
 #define _POW(_N,_M)	_pow(_N,_M)
 #define _SQRT(_N)	cm_sqrt(_N,0)
