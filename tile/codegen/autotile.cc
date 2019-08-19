@@ -134,6 +134,7 @@ TensorShape MakeOddTile(const TensorShape& tile) {
 
 TileMetrics ComputeSizes(const std::map<std::string, size_t>& tile_by_name,  //
                          const Block& block,                                 //
+                         Block* next_block,                                  //
                          const proto::AutotilePass& options) {
   TileMetrics ret;
   for (const auto& ref : block.refs) {
@@ -212,12 +213,12 @@ struct ComputeDensityCostModel {
     return options.acc_idxs() || !acc_idxs.count(&idx);
   }
 
-  Cost ComputeCost(const Block& block, const Tile& tile) const {
+  Cost ComputeCost(const Block& block, Block* next_block, const Tile& tile) const {
     std::map<std::string, size_t> tile_by_name;
     for (size_t i = 0; i < block.idxs.size(); i++) {
       tile_by_name[block.idxs[i].name] = tile.dims[i].size;
     }
-    auto metrics = ComputeSizes(tile_by_name, block, options);
+    auto metrics = ComputeSizes(tile_by_name, block, next_block, options);
     IVLOG(4, "    TileCost> tile_by_name: " << tile_by_name << ", metrics: " << metrics);
     if (!metrics.IsValid(options)) {
       return Cost::Stop;
@@ -282,7 +283,7 @@ struct PartitionComputeCostModel {
     return !acc_idxs.count(&idx);
   }
 
-  Cost ComputeCost(const Block& block, const Tile& tile) const {
+  Cost ComputeCost(const Block& block, Block* next_block, const Tile& tile) const {
     auto count = tile.counts_product();
     if (count > num_parts) {
       return (num_parts + 1) * (count - num_parts);
@@ -315,7 +316,7 @@ struct TileSearchState {
 
 template <typename CostModel>
 boost::optional<TileResult> PickBestTile(const Block& block, bool only_po2, bool only_even, bool only_multiple_of_32,
-                                         bool is_fast, const CostModel& model) {
+                                         bool is_fast, Block* next_block, const CostModel& model) {
   IVLOG(3, "Autotile> PickBestTile> block: " << block.name);
   TileSearchState state;
   Tile tile(block, only_multiple_of_32 ? 32 : 1);
@@ -326,7 +327,7 @@ boost::optional<TileResult> PickBestTile(const Block& block, bool only_po2, bool
       tile.dims[i].count = 1;
     }
   }
-  Cost cost = model.ComputeCost(block, tile);
+  Cost cost = model.ComputeCost(block, next_block, tile);
   Cost base_cost = cost;
   state.AddTile(tile, base_cost);
   while (!state.todo.empty()) {
@@ -361,7 +362,7 @@ boost::optional<TileResult> PickBestTile(const Block& block, bool only_po2, bool
         tile.set(i, prev.size + 1, block.idxs[i].range);
       }
       if (!state.found_tiles.count(tile)) {
-        cost = model.ComputeCost(block, tile);
+        cost = model.ComputeCost(block, next_block, tile);
         state.AddTile(tile, cost);
       }
       tile.dims[i] = prev;
@@ -374,7 +375,7 @@ boost::optional<TileResult> PickBestTile(const Block& block, bool only_po2, bool
 
 void AutotilePass::Apply(CompilerState* state) const {
   auto reqs = FromProto(options_.reqs());
-  RunOnBlocks(state->entry(), reqs, [this](const AliasMap& map, Block* block) {
+  RunOnBlocksWithNext(state->entry(), reqs, [this](const AliasMap& map, Block* block, Block *next_block) {
     if (block->has_any_tags(FromProto(options_.exclude()))) {
       return;
     }
@@ -388,7 +389,7 @@ void AutotilePass::Apply(CompilerState* state) const {
     }
     ComputeDensityCostModel model(*block, options_);
     auto result = PickBestTile(*block, options_.only_po2(), options_.only_even(), options_.only_multiple_of_32(),
-                               options_.fast(), model);
+                               options_.fast(), options_.next_block() ? next_block : nullptr, model);
     if (result) {
       IVLOG(2, "Autotile> block: " << block->name << ", tile: " << result->tile << ", cost: " << result->cost);
       const TileShape& tiling_shape = options_.flip() ? result->tile.counts() : result->tile.sizes();
@@ -429,9 +430,10 @@ void AutotilePass::Apply(CompilerState* state) const {
 
 void PartitionComputePass::Apply(CompilerState* state) const {
   auto reqs = FromProto(options_.reqs());
-  RunOnBlocks(state->entry(), reqs, [this](const AliasMap& map, Block* block) {
+  RunOnBlocksWithNext(state->entry(), reqs, [this](const AliasMap& map, Block* block, Block* next_block) {
     PartitionComputeCostModel model(*block, options_);
-    auto result = PickBestTile(*block, false, false, options_.only_multiple_of_32(), false, model);
+    auto result = PickBestTile(*block, false, false, options_.only_multiple_of_32(), false,
+                  options_.next_block() ? next_block : nullptr, model);
     if (result) {
       IVLOG(2, "PartitionCompute> block: " << block->name                 //
                                            << ", tile: " << result->tile  //

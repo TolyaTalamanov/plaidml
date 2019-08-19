@@ -127,6 +127,34 @@ void RunOnBlocks(stripe::Block* root, const stripe::Tags& reqs, const F& func, b
   RunOnBlocksRecurse(root_map, root, reqs, func, rec_func);
 }
 
+template <typename F>
+void RunOnBlocksWithNextRecurse(const AliasMap& map, stripe::Block* block, stripe::Block* next,
+                                const stripe::Tags& reqs, const F& func, bool rec_func) {
+  bool run_func = block->has_tags(reqs) || reqs.count("all") > 0;
+  if (run_func) {
+    func(map, block, next);
+  }
+  if (!run_func || rec_func) {
+    for (auto it = block->stmts.begin(); it != block->stmts.end(); ++it) {
+      auto inner = stripe::Block::Downcast(*it);
+      if (inner) {
+        AliasMap inner_map(map, inner.get());
+        auto next_it = std::next(it);
+        auto inner_next = (next_it == block->stmts.end()) ? nullptr : stripe::Block::Downcast(*next_it);
+        RunOnBlocksWithNextRecurse(inner_map, inner.get(),
+          inner_next ? inner_next.get() : nullptr, reqs, func, rec_func);
+      }
+    }
+  }
+}
+
+template <typename F>
+void RunOnBlocksWithNext(stripe::Block* root, const stripe::Tags& reqs, const F& func, bool rec_func = false) {
+  AliasMap base;
+  AliasMap root_map(base, root);
+  RunOnBlocksWithNextRecurse(root_map, root, nullptr, reqs, func, rec_func);
+}
+
 std::ostream& operator<<(std::ostream& os, const AliasInfo& ai);
 std::ostream& operator<<(std::ostream& os, const Extent& extent);
 
