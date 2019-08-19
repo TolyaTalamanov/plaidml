@@ -68,7 +68,11 @@ class Emit : public lang::EmitC {
   std::map<std::shared_ptr<sem::LoadExpr>, std::string> GetGlobalLoadExprMap(const sem::ExprPtr& p);
 
   std::string GetLValueName(const sem::LValPtr& lv);
-  void SingleElementWrite(const sem::LValPtr& lhs, const sem::ExprPtr& rhs);
+  void EmitReadStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs);
+  void EmitReadStat(const std::string& lhs, const sem::ExprPtr& rhs);
+  void EmitWriteStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs);
+  void EmitWriteStat(const sem::LValPtr& lhs, const std::string& rhs);
+  void EmitSingleElementWriteStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs);
   void AssignGlobalVarToTemp(const sem::ExprPtr& e);
 
   std::map<std::string, int> vector_stride_map;
@@ -77,7 +81,7 @@ class Emit : public lang::EmitC {
   bool in_read_statement = false;
   bool in_write_statement = false;
   sem::Type write_type;
-  int temp_var_num = 0;
+  int temp_num = 0;
   std::map<std::string, std::string> input_replace_map;
   std::set<std::string> large_sparse_vactor;
 

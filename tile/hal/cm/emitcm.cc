@@ -19,6 +19,51 @@ namespace tile {
 namespace hal {
 namespace cm {
 
+inline std::string c_dtype(const DataType& dt) {
+  std::string base;
+  switch (dt) {
+    case DataType::BOOLEAN:
+      base = "(bool)";
+      break;
+    case DataType::INT8:
+      base = "(char)";
+      break;
+    case DataType::INT16:
+      base = "(short)";
+      break;
+    case DataType::INT32:
+      base = "(int)";
+      break;
+    case DataType::INT64:
+      base = "(long)";
+      break;
+    case DataType::UINT8:
+      base = "(uchar)";
+      break;
+    case DataType::UINT16:
+      base = "(ushort)";
+      break;
+    case DataType::UINT32:
+      base = "(uint)";
+      break;
+    case DataType::UINT64:
+      base = "(ulong)";
+      break;
+    case DataType::FLOAT16:
+      base = "(half)";
+      break;
+    case DataType::FLOAT32:
+      base = "(float)";
+      break;
+    case DataType::FLOAT64:
+      base = "(double)";
+      break;
+    default:
+      throw std::runtime_error("Invalid tile type");
+  }
+  return base;
+}
+
 void Emit::Visit(const sem::SubscriptLVal& n) {
   if (in_write_statement) {
     if (!rw_single_element_mode) {
@@ -114,120 +159,140 @@ void Emit::Visit(const sem::LoadExpr& n) {
   }
 }
 
+void Emit::EmitSingleElementWriteStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs) {
+  emitTab();
+  auto ty_lhs = TypeOf(lhs);
+  switch (ty_lhs.dtype) {
+    case DataType::INT8:
+    case DataType::UINT8:
+    case DataType::INT16:
+    case DataType::UINT16:
+    case DataType::FLOAT16:
+      emit("_write_single_element(");
+      break;
+    case DataType::INT32:
+    case DataType::UINT32:
+    case DataType::FLOAT32:
+      emit("_write_atomic_single_dword(");
+      break;
+    case DataType::INT64:
+      emit("_write_atomic_single_long(");
+      break;
+    default:
+      throw std::runtime_error("EmitSingleElementWriteStat: this data type is not supported!");
+  }
+  in_write_statement = true;
+  write_type = ty_lhs;
+  lhs->Accept(*this);
+  in_write_statement = false;
+  emit(", ");
+  auto ty_rhs = TypeOf(rhs);
+  if (c_dtype(ty_lhs.dtype) != c_dtype(ty_rhs.dtype)) {
+    emit(c_dtype(ty_lhs.dtype));
+  }
+  rhs->Accept(*this);
+  if (IsVector(rhs)) {
+    emit("(0)");
+  }
+  emit(");\n");
+}
+
+void Emit::EmitWriteStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs) {
+  emitTab();
+  emit("_write(");
+  in_write_statement = true;
+  write_type = TypeOf(lhs);
+  lhs->Accept(*this);
+  in_write_statement = false;
+  emit(", ");
+  rhs->Accept(*this);
+  emit(");\n");
+}
+
+void Emit::EmitWriteStat(const sem::LValPtr& lhs, const std::string& rhs) {
+  emitTab();
+  emit("_write(");
+  in_write_statement = true;
+  write_type = TypeOf(lhs);
+  lhs->Accept(*this);
+  in_write_statement = false;
+  emit(", ");
+  emit(rhs);
+  emit(");\n");
+}
+
+void Emit::EmitReadStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs) {
+  emitTab();
+  emit("_read(");
+  in_read_statement = true;
+  rhs->Accept(*this);
+  emit(", ");
+  lhs->Accept(*this);
+  emit(");\n");
+  in_read_statement = false;
+}
+
+void Emit::EmitReadStat(const std::string& lhs, const sem::ExprPtr& rhs) {
+  emitTab();
+  emit("_read(");
+  in_read_statement = true;
+  rhs->Accept(*this);
+  emit(", ");
+  emit(lhs);
+  emit(");\n");
+  in_read_statement = false;
+}
+
 void Emit::Visit(const sem::StoreStmt& n) {
   auto ty_lhs = TypeOf(n.lhs);
-
-  auto is_lhs_global = GetGlobalVarWithOffset(n.lhs).size() > 0;
+  auto s = GetGlobalVarWithOffset(n.lhs);
   auto rhs_load_exp = std::dynamic_pointer_cast<sem::LoadExpr>(n.rhs);
-  bool is_rhs_global = (rhs_load_exp != nullptr) && GetGlobalVarWithOffset(rhs_load_exp->inner).size() > 0;
 
-  auto rhs_int_const = std::dynamic_pointer_cast<sem::IntConst>(n.rhs);
-  if (is_lhs_global && rhs_int_const) {
-    emitTab();
-    emit("_write_atomic_single_dword(");
-    in_write_statement = true;
-    write_type = ty_lhs;
-    n.lhs->Accept(*this);
-    in_write_statement = false;
-    emit(", ");
-    n.rhs->Accept(*this);
-    emit(");\n");
-    return;
-  }
-
-  if (is_lhs_global && is_rhs_global) {
+  if (s.size() > 0) {
     AssignGlobalVarToTemp(n.rhs);
 
-    if (rw_single_element_mode) {
-      SingleElementWrite(n.lhs, n.rhs);
-    } else {
-      emitTab();
-      emit("_write(");
-      in_write_statement = true;
-      write_type = ty_lhs;
-      n.lhs->Accept(*this);
-      in_write_statement = false;
-      emit(", ");
-      n.rhs->Accept(*this);
-      emit(");\n");
+    auto int_const = std::dynamic_pointer_cast<sem::IntConst>(n.rhs);
+    if (rw_single_element_mode || int_const) {
+      EmitSingleElementWriteStat(n.lhs, n.rhs);
+      return;
     }
-  }
-
-  if (is_lhs_global && !is_rhs_global) {
-    auto p = std::dynamic_pointer_cast<sem::SubscriptLVal>(n.lhs);
-    if (p == nullptr) throw std::runtime_error("StoreStmt lhs is not SubscriptLVal!");
-
-    AssignGlobalVarToTemp(n.rhs);
-
-    if (rw_single_element_mode) {
-      SingleElementWrite(n.lhs, n.rhs);
+    if (rhs_load_exp && GetGlobalVarWithOffset(n.rhs).size() > 0) {
+      EmitWriteStat(n.lhs, n.rhs);
     } else {
       auto cond_expr = std::dynamic_pointer_cast<sem::CondExpr>(n.rhs);
       if (cond_expr) {
-        std::string temp_var = "cm_temp" + std::to_string(temp_var_num);
-        temp_var_num++;
-        EmitVector(ty_lhs, vector_size, temp_var);
+        std::string temp = "cm_temp" + std::to_string(temp_num);
+        temp_num++;
+        EmitVector(ty_lhs, vector_size, temp);
         emit(";\n");
 
         emitTab();
-        emit(temp_var);
+        emit(temp);
         emit(".");
         n.rhs->Accept(*this);
         emit(";\n");
 
-        emitTab();
-        emit("_write(");
-        in_write_statement = true;
-        write_type = ty_lhs;
-        n.lhs->Accept(*this);
-        in_write_statement = false;
-        emit(", ");
-        emit(temp_var);
-        emit(");\n");
+        EmitWriteStat(n.lhs, temp);
         return;
       }
-
-      emitTab();
-      emit("_write(");
-      in_write_statement = true;
-      write_type = ty_lhs;
-      n.lhs->Accept(*this);
-      in_write_statement = false;
-      emit(", ");
-      n.rhs->Accept(*this);
-      emit(");\n");
+      EmitWriteStat(n.lhs, n.rhs);
     }
-  }
+  } else {
+    if (rhs_load_exp && GetGlobalVarWithOffset(n.rhs).size() > 0) {
+      EmitReadStat(n.lhs, n.rhs);
+      vector_stride_map[GetLValueName(n.lhs)] = GetIndexStride(n.rhs);
+    } else {
+      emitTab();
+      n.lhs->Accept(*this);
 
-  if (!is_lhs_global && is_rhs_global) {
-    emitTab();
-    emit("_read(");
-    in_read_statement = true;
-    n.rhs->Accept(*this);
-    emit(", ");
-    n.lhs->Accept(*this);
-    emit(");\n");
-    in_read_statement = false;
+      auto cond_exp = std::dynamic_pointer_cast<sem::CondExpr>(n.rhs);
+      auto select_exp = std::dynamic_pointer_cast<sem::SelectExpr>(n.rhs);
+      std::string op = (cond_exp || select_exp) ? "." : " = ";
 
-    auto stride = GetIndexStride(n.rhs);
-    vector_stride_map[GetLValueName(n.lhs)] = stride;
-  }
-
-  if (!is_lhs_global && !is_rhs_global) {
-    emitTab();
-    n.lhs->Accept(*this);
-    auto cond_exp = std::dynamic_pointer_cast<sem::CondExpr>(n.rhs);
-    auto select_exp = std::dynamic_pointer_cast<sem::SelectExpr>(n.rhs);
-    if (cond_exp || select_exp) {
-      emit(".");
+      emit(op);
       n.rhs->Accept(*this);
       emit(";\n");
-      return;
     }
-
-    emit(" = ");
-    n.rhs->Accept(*this);
-    emit(";\n");
   }
 }
 
@@ -266,14 +331,8 @@ void Emit::Visit(const sem::DeclareStmt& n) {
       EmitVector(ty, vector_size, n.name);
       emit(";\n");
 
-      emitTab();
-      emit("_read(");
-      in_read_statement = true;
-      n.init->Accept(*this);
-      emit(", ");
-      emit(n.name);
-      emit(");\n");
-      in_read_statement = false;
+      EmitReadStat(n.name, n.init);
+
       CheckValidType(ty);
       scope_->Bind(n.name, ty);
       return;
@@ -349,7 +408,6 @@ void Emit::Visit(const sem::ClampExpr& n) {
   auto ty_min = TypeOf(n.min);
   auto ty_max = TypeOf(n.max);
 
-  // Align value dtypes and vector widths.
   sem::Type ty_clamp{sem::Type::VALUE};
   if (ty_val.base == sem::Type::VALUE) {
     ty_clamp.dtype = ty_val.dtype;
@@ -595,115 +653,25 @@ void Emit::Visit(const sem::BarrierStmt& n) {}
 void Emit::emit(int n) { emit(std::to_string(n)); }
 void Emit::emit(size_t size) { emit(std::to_string(size)); }
 
-inline std::string c_dtype(const DataType& dt) {
-  std::string base;
-  switch (dt) {
-    case DataType::BOOLEAN:
-      base = "(bool)";
-      break;
-    case DataType::INT8:
-      base = "(char)";
-      break;
-    case DataType::INT16:
-      base = "(short)";
-      break;
-    case DataType::INT32:
-      base = "(int)";
-      break;
-    case DataType::INT64:
-      base = "(long)";
-      break;
-    case DataType::UINT8:
-      base = "(uchar)";
-      break;
-    case DataType::UINT16:
-      base = "(ushort)";
-      break;
-    case DataType::UINT32:
-      base = "(uint)";
-      break;
-    case DataType::UINT64:
-      base = "(ulong)";
-      break;
-    case DataType::FLOAT16:
-      base = "(half)";
-      break;
-    case DataType::FLOAT32:
-      base = "(float)";
-      break;
-    case DataType::FLOAT64:
-      base = "(double)";
-      break;
-    default:
-      throw std::runtime_error("Invalid tile type");
-  }
-  return base;
-}
-
-void Emit::SingleElementWrite(const sem::LValPtr& lhs, const sem::ExprPtr& rhs) {
-  emitTab();
-  auto ty_lhs = TypeOf(lhs);
-  switch (ty_lhs.dtype) {
-    case DataType::INT8:
-    case DataType::UINT8:
-    case DataType::INT16:
-    case DataType::UINT16:
-    case DataType::FLOAT16:
-      emit("_write_single_element(");
-      break;
-    case DataType::INT32:
-    case DataType::UINT32:
-    case DataType::FLOAT32:
-      emit("_write_atomic_single_dword(");
-      break;
-    case DataType::INT64:
-      emit("_write_atomic_single_long(");
-      break;
-    default:
-      throw std::runtime_error("SingleElementWrite: this data type is not supported!");
-  }
-  in_write_statement = true;
-  write_type = ty_lhs;
-  lhs->Accept(*this);
-  in_write_statement = false;
-  emit(", ");
-  auto ty_rhs = TypeOf(rhs);
-  if (c_dtype(ty_lhs.dtype) != c_dtype(ty_rhs.dtype)) {
-    emit(c_dtype(ty_lhs.dtype));
-  }
-  rhs->Accept(*this);
-  if (IsVector(rhs)) {
-    emit("(0)");
-  }
-  emit(");\n");
-}
-
 void Emit::AssignGlobalVarToTemp(const sem::ExprPtr& e) {
   auto result_map = GetGlobalLoadExprMap(e);
   for (auto result : result_map) {
-    std::string temp_val = "cm_temp" + std::to_string(temp_var_num);
-    temp_var_num++;
+    std::string temp = "cm_temp" + std::to_string(temp_num);
+    temp_num++;
     auto ty = TypeOf(result.first->inner);
-    EmitVector(ty, vector_size, temp_val);
+    EmitVector(ty, vector_size, temp);
     emit(";\n");
 
     auto s = GetGlobalVarWithOffset(result.first->inner);
     if (s.length() > 0 && input_replace_map.find(s) != input_replace_map.end()) {
       emitTab();
-      emit(temp_val);
+      emit(temp);
       emit(" = ");
       emit(input_replace_map[s]);
       emit(";\n");
     } else {
-      emitTab();
-      emit("_read(");
-      in_read_statement = true;
-      result.first->Accept(*this);
-      emit(", ");
-      emit(temp_val);
-      emit(");\n");
-      in_read_statement = false;
-      input_replace_map[result.second] = temp_val;
+      EmitReadStat(temp, result.first);
+      input_replace_map[result.second] = temp;
     }
   }
 }
