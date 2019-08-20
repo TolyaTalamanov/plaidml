@@ -539,40 +539,40 @@ inline std::string c_dtype(const DataType& dt) {
   std::string base;
   switch (dt) {
     case DataType::BOOLEAN:
-      base = "(bool)";
+      base = "bool";
       break;
     case DataType::INT8:
-      base = "(char)";
+      base = "char";
       break;
     case DataType::INT16:
-      base = "(short)";
+      base = "short";
       break;
     case DataType::INT32:
-      base = "(int)";
+      base = "int";
       break;
     case DataType::INT64:
-      base = "(long)";
+      base = "long";
       break;
     case DataType::UINT8:
-      base = "(uchar)";
+      base = "uchar";
       break;
     case DataType::UINT16:
-      base = "(ushort)";
+      base = "ushort";
       break;
     case DataType::UINT32:
-      base = "(uint)";
+      base = "uint";
       break;
     case DataType::UINT64:
-      base = "(ulong)";
+      base = "ulong";
       break;
     case DataType::FLOAT16:
-      base = "(half)";
+      base = "half";
       break;
     case DataType::FLOAT32:
-      base = "(float)";
+      base = "float";
       break;
     case DataType::FLOAT64:
-      base = "(double)";
+      base = "double";
       break;
     default:
       throw std::runtime_error("Invalid tile type");
@@ -629,6 +629,10 @@ void Emit::EmitWriteStat(const sem::LValPtr& lhs, const std::string& rhs) {
 void Emit::EmitSingleElementWriteStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs) {
   emitTab();
   auto ty_lhs = TypeOf(lhs);
+  auto ty_rhs = TypeOf(rhs);
+  auto dty_lhs = c_dtype(ty_lhs.dtype);
+  auto dty_rhs = c_dtype(ty_rhs.dtype);
+
   switch (ty_lhs.dtype) {
     case DataType::INT8:
     case DataType::UINT8:
@@ -653,10 +657,11 @@ void Emit::EmitSingleElementWriteStat(const sem::LValPtr& lhs, const sem::ExprPt
   lhs->Accept(*this);
   write_mode = false;
   emit(", ");
-  auto ty_rhs = TypeOf(rhs);
-  if (c_dtype(ty_lhs.dtype) != c_dtype(ty_rhs.dtype)) {
-    emit(c_dtype(ty_lhs.dtype));
+
+  if (dty_lhs != dty_rhs) {
+    emit("(" + dty_lhs + ")");
   }
+
   rhs->Accept(*this);
   if (IsVector(rhs)) {
     emit("(0)");
@@ -779,11 +784,12 @@ std::map<std::shared_ptr<sem::LoadExpr>, std::string> Emit::GetGlobalLoadExprMap
 }
 
 void Emit::EmitVector(const sem::Type& type, const size_t& size, const std::string& name) {
-  if (size >= 128 * 16) {
+  if (size >= 2048) {
     large_sparse_vactor.insert(name);
-    EmitVector(type, size / 16, name);
+    EmitVector(type, size / vector_size, name);
     return;
   }
+
   emitTab();
   emit("vector<");
   emitType(type);
