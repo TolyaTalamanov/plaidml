@@ -452,7 +452,7 @@ void Emit::Visit(const sem::CondExpr& n) {
   emit(", ");
 
   if (IsVector(n.cond)) {
-    emit("vector<char,");
+    emit("vector<ushort,");
     emit(vector_size);
     emit(">(");
     n.cond->Accept(*this);
@@ -473,7 +473,7 @@ void Emit::Visit(const sem::SelectExpr& n) {
   emit(", ");
 
   if (IsVector(n.cond)) {
-    emit("vector<char,");
+    emit("vector<ushort,");
     emit(vector_size);
     emit(">(");
     n.cond->Accept(*this);
