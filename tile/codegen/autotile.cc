@@ -340,8 +340,8 @@ struct ComputeDensityCostModel {
       }
       for (const auto& idx : next_block->idxs) {
         if (next_tile_by_name.find(idx.name) == next_tile_by_name.end()) {
-          next_tile_by_name.emplace(idx.name, 1);
-          next_tile.dims.push_back({1, idx.range});
+          next_tile_by_name.emplace(idx.name, idx.range);
+          next_tile.dims.push_back({idx.range, 1});
         }
         else {
           size_t size = next_tile_by_name[idx.name];
