@@ -198,6 +198,7 @@ TileMetrics ComputeSizes(const std::map<std::string, size_t>& tile_by_name,     
                          const std::map<std::string, size_t>& next_tile_by_name,  //
                          Block* next_block,                                       //
                          const std::string& common_ref,                           //
+                         size_t acc_counts_product,                               //
                          const proto::AutotilePass& options) {
   TileMetrics ret;
 
@@ -233,6 +234,9 @@ TileMetrics ComputeSizes(const std::map<std::string, size_t>& tile_by_name,     
       }
     }
   }
+  ret.total_bandwidth *= acc_counts_product;
+  ret.input_bandwidth *= acc_counts_product;
+  ret.output_bandwidth *= acc_counts_product;
   if (next_block == nullptr) {
     return ret;
   }
@@ -262,6 +266,7 @@ TileMetrics ComputeSizes(const std::map<std::string, size_t>& tile_by_name,     
       ret.output_bandwidth += bandwidth;
     }
   }
+
   return ret;
 }
 
@@ -320,8 +325,12 @@ struct ComputeDensityCostModel {
 
   Cost ComputeCost(const Block& block, Block* next_block, const Tile& tile) const {
     std::map<std::string, size_t> tile_by_name;
+    size_t acc_counts_product = 1;
     for (size_t i = 0; i < block.idxs.size(); i++) {
       tile_by_name[block.idxs[i].name] = tile.dims[i].size;
+      if (acc_idxs.find(&block.idxs[i]) != acc_idxs.end()) {
+        acc_counts_product *= tile.dims[i].count;
+      }
     }
 
     std::string common_ref;
@@ -352,7 +361,7 @@ struct ComputeDensityCostModel {
     }
 
     auto metrics = ComputeSizes(tile_by_name, block,
-                   next_tile_by_name, next_block, common_ref, options);
+                   next_tile_by_name, next_block, common_ref, acc_counts_product, options);
     IVLOG(4, "    TileCost> tile_by_name: " << tile_by_name << ", metrics: " << metrics);
     if (!metrics.IsValid(options)) {
       return Cost::Stop;
@@ -400,7 +409,8 @@ struct ComputeDensityCostModel {
     else {
       total_next_compute = 0;
     }
-    double total_compute = total_block_compute + total_next_compute;
+    // If block is normal eltwise, acc_counts_product == 1 and total_next_compute == 0
+    double total_compute = total_block_compute * acc_counts_product + total_next_compute;
 
     double inv_size_util = static_cast<double>(options.min_size()) / std::min(tot_size, options.min_size());
     double inv_out_size_util =
@@ -494,7 +504,9 @@ boost::optional<TileResult> PickBestTile(const Block& block, bool only_po2, bool
         continue;  // Already at max size
       }
       if (only_po2) {
-        tile.set(i, 2 * prev.size, block.idxs[i].range);
+        if (2 * prev.size <= block.idxs[i].range) {
+          tile.set(i, 2 * prev.size, block.idxs[i].range);
+        }
       } else if (only_even) {
         // Find the next even divisor of range
         for (size_t j = prev.size + 1; j <= block.idxs[i].range; j++) {
