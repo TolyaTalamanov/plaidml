@@ -381,7 +381,10 @@ void Emit::Visit(const sem::Function& n) {
   scope_ = &scope;
 
   single_eu_mode = false;
+  int param_index = 0;
   for (const auto& p : n.params) {
+    input_params_map[p.second] = param_index;
+    param_index++;
     auto ty = p.first;
     if (ty.dtype == DataType::BOOLEAN) {
       ty.dtype = DataType::INT8;
@@ -612,6 +615,11 @@ void Emit::EmitWriteStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs) {
   emit(", ");
   rhs->Accept(*this);
   emit(");\n");
+
+  auto s = GetLValueName(lhs);
+  if (input_params_map.find(s) != input_params_map.end()) {
+    output_index.insert(input_params_map[s]);
+  }
 }
 
 void Emit::EmitWriteStat(const sem::LValPtr& lhs, const std::string& rhs) {
@@ -624,6 +632,11 @@ void Emit::EmitWriteStat(const sem::LValPtr& lhs, const std::string& rhs) {
   emit(", ");
   emit(rhs);
   emit(");\n");
+
+  auto s = GetLValueName(lhs);
+  if (input_params_map.find(s) != input_params_map.end()) {
+    output_index.insert(input_params_map[s]);
+  }
 }
 
 void Emit::EmitSingleElementWriteStat(const sem::LValPtr& lhs, const sem::ExprPtr& rhs) {
@@ -667,6 +680,11 @@ void Emit::EmitSingleElementWriteStat(const sem::LValPtr& lhs, const sem::ExprPt
     emit("(0)");
   }
   emit(");\n");
+
+  auto s = GetLValueName(lhs);
+  if (input_params_map.find(s) != input_params_map.end()) {
+    output_index.insert(input_params_map[s]);
+  }
 }
 
 void Emit::emit(int n) { emit(std::to_string(n)); }

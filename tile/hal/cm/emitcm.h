@@ -40,9 +40,10 @@ class Emit : public lang::EmitC {
   void Visit(const sem::BarrierStmt&) final;
   void Visit(const sem::Function&) final;
 
-  size_t vector_size;
   bool single_element_rw_mode;
   bool single_eu_mode;
+  size_t vector_size;
+  std::set<int> output_index;
 
   TravelVisitor tv;
 
@@ -80,6 +81,7 @@ class Emit : public lang::EmitC {
   bool write_mode = false;
   bool sub_group_broadcast_first_val = false;
   sem::Type write_type;
+  std::map<std::string, int> input_params_map;
   std::map<std::string, int> vector_stride_map;
   std::map<std::string, std::string> input_replace_map;
   std::set<std::string> large_sparse_vactor;

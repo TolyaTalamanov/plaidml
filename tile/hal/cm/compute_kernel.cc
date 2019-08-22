@@ -54,7 +54,7 @@ std::shared_ptr<hal::Event> ComputeKernel::Run(const context::Context& ctx,
     Buffer* buf = Buffer::Downcast(params[i].get());
     VLOG(4) << "  Param " << i << ": " << buf << " size=" << buf->size();
     CMMemBuffer* membuf = dynamic_cast<CMMemBuffer*>(buf);
-    if (i == 0) {
+    if (cm_->output_index.find(i) != cm_->output_index.end()) {
       membuf->clean_base_();
     }
     buf->SetKernelArg(kernel_, i);
