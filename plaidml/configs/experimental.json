@@ -32,7 +32,7 @@
           "or": {
             "sel": [
               {
-                "vendor_regex": "AMD"
+                "vendor_regex": ".*AMD.*"
               },
               {
                 "vendor_regex": "Advanced Micro Devices.*"
@@ -40,14 +40,6 @@
             ]
           }
         },
-          "or": {
-              "sel": [
-                  {
-                      "name_regex": ".*Radeon.*"
-                  },
-              ]
-          }
-      }
         "settings": {
           "threads": 256,
           "vec_size": 1,
