@@ -179,13 +179,13 @@ SUITES:
       keras-stripe-ocl-gfx803:
         pipelines: [nightly]
       keras-plaid-ocl-vega56:
-        pipelines: [ci]
+        pipelines: [plaidml, ci]
       keras-stripe-ocl-vega56:
-        pipelines: [ci]
+        pipelines: [plaidml, ci]
       keras-plaid-mtl-vega56:
-        pipelines: [ci]
+        pipelines: [plaidml, ci]
       keras-stripe-mtl-vega56:
-        pipelines: [ci]
+        pipelines: [plaidml, ci]
 
     params:
       ci:
@@ -264,13 +264,13 @@ SUITES:
       keras-plaid-ocl-gfx803:
         pipelines: [plaidml]
       keras-plaid-ocl-vega56:
-        pipelines: [ci]
+        pipelines: [plaidml, ci]
       keras-stripe-ocl-vega56:
-        pipelines: [ci]
+        pipelines: [plaidml, ci]
       keras-plaid-mtl-vega56:
-        pipelines: [ci]
+        pipelines: [plaidml, ci]
       keras-stripe-mtl-vega56:
-        pipelines: [ci]  
+        pipelines: [plaidml, ci]
     params:
       ci:
         batch_sizes: [1]
