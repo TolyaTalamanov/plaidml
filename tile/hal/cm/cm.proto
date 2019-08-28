@@ -87,9 +87,6 @@ message SvmCapability {
   }
 }
 
-// Metadata about cm platforms discovered during enumeration.
-// Fields are ordered according to the table in the clGetPlatformInfo
-// description in the cm 2.2 specification.
 message PlatformInfo {
   string profile = 1;
   string version = 2;
@@ -99,9 +96,6 @@ message PlatformInfo {
   uint64 host_timer_resolution_ns = 6;
 };
 
-// Metadata about cm devices discovered during enumeration.
-// Fields are ordered according to the table in the clGetDeviceInfo description
-// in the cm 2.2 specification.
 message DeviceInfo {
   hal.proto.HardwareType.Value type = 1;
   uint32 vendor_id = 2;
@@ -169,7 +163,7 @@ message DeviceInfo {
   uint32 max_on_device_queues = 64;
   uint32 max_on_device_events = 65;
   repeated string built_in_kernel = 66;
-  uint32 platform_index = 67;  // Index of the associated PlatformInfo
+  uint32 platform_index = 67; // Index of the associated PlatformInfo
   string name = 68;
   string vendor = 69;
   string driver_version = 70;
@@ -228,6 +222,4 @@ message KernelInfo {
   vertexai.tile.lang.proto.KernelInfo kinfo = 3;
 }
 
-message RunInfo {
-  context.proto.ActivityID kernel_id = 1;
-}
+message RunInfo { context.proto.ActivityID kernel_id = 1; }

@@ -11,69 +11,15 @@ namespace testing {
 namespace {
 
 Param supported_params[] = {
-    {DataType::INT8, 1},   //
-    {DataType::INT8, 2},   //
-    {DataType::INT8, 4},   //
-    {DataType::INT8, 8},   //
-    {DataType::INT8, 16},  //
-
-    {DataType::INT16, 1},   //
-    {DataType::INT16, 2},   //
-    {DataType::INT16, 4},   //
-    {DataType::INT16, 8},   //
-    {DataType::INT16, 16},  //
-
-    {DataType::INT32, 1},   //
-    {DataType::INT32, 2},   //
-    {DataType::INT32, 4},   //
-    {DataType::INT32, 8},   //
-    {DataType::INT32, 16},  //
-
-    {DataType::INT64, 1},  //
-    {DataType::INT64, 2},  //
-
-    {DataType::UINT8, 1},   //
-    {DataType::UINT8, 2},   //
-    {DataType::UINT8, 4},   //
-    {DataType::UINT8, 8},   //
-    {DataType::UINT8, 16},  //
-
-    {DataType::UINT16, 1},   //
-    {DataType::UINT16, 2},   //
-    {DataType::UINT16, 4},   //
-    {DataType::UINT16, 8},   //
-    {DataType::UINT16, 16},  //
-
-    {DataType::UINT32, 1},   //
-    {DataType::UINT32, 2},   //
-    {DataType::UINT32, 4},   //
-    {DataType::UINT32, 8},   //
-    {DataType::UINT32, 16},  //
-
-    {DataType::UINT64, 1},  //
-    {DataType::UINT64, 2},  //
-
-    {DataType::FLOAT16, 1},   //
-    {DataType::FLOAT16, 2},   //
-    {DataType::FLOAT16, 4},   //
-    {DataType::FLOAT16, 8},   //
-    {DataType::FLOAT16, 16},  //
-
-    {DataType::FLOAT32, 1},   //
-    {DataType::FLOAT32, 2},   //
-    {DataType::FLOAT32, 4},   //
-    {DataType::FLOAT32, 8},   //
-    {DataType::FLOAT32, 16},  //
-
-    // TODO: enable these tests by querying the target device for
-    // support of 64-bit floating point types
-    // {DataType::FLOAT64, 1},  //
-    // {DataType::FLOAT64, 2},  //
+    {DataType::INT8, 1},    {DataType::INT16, 1},   {DataType::INT32, 1},
+    {DataType::INT64, 1},   {DataType::UINT8, 1},   {DataType::UINT16, 1},
+    {DataType::UINT32, 1},  {DataType::UINT64, 1},  {DataType::FLOAT16, 1},
+    {DataType::FLOAT32, 1}, {DataType::FLOAT64, 1},
 };
 
 std::vector<FactoryParam> SupportedParams() {
   std::vector<FactoryParam> params;
-  for (const Param& param : supported_params) {
+  for (const Param &param : supported_params) {
     auto factory = [param] {
       context::Context ctx;
       local_machine::proto::Platform config;
@@ -87,9 +33,10 @@ std::vector<FactoryParam> SupportedParams() {
   return params;
 }
 
-INSTANTIATE_TEST_CASE_P(cm, PlatformTest, ::testing::ValuesIn(SupportedParams()));
+INSTANTIATE_TEST_CASE_P(CM, PlatformTest,
+                        ::testing::ValuesIn(SupportedParams()));
 
-}  // namespace
-}  // namespace testing
-}  // namespace tile
-}  // namespace vertexai
+} // namespace
+} // namespace testing
+} // namespace tile
+} // namespace vertexai

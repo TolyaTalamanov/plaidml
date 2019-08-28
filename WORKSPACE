@@ -14,9 +14,3 @@ http_archive(
 load("//bzl:workspace.bzl", "plaidml_workspace")
 
 plaidml_workspace()
-
-new_local_repository(
-    name = "cmheaders",
-    build_file = "cmheaders.BUILD",
-    path = "/usr/include/",
-)

@@ -1,8 +1,4 @@
 # Macros for building CM code.
-
-def cm_runtime_lib():
-    """Returns true if CM was enabled during the configure process."""
-    return %{cm_runtime_lib}
     
 def cm_is_configured():
     """Returns true if CM was enabled during the configure process."""

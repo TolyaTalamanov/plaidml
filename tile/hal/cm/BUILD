@@ -2,8 +2,6 @@
 
 load("//bzl:plaidml.bzl", "plaidml_cc_library", "plaidml_cc_test", "plaidml_proto_library")
 
-load("@cm//:build_defs.bzl", "cm_runtime_lib")
-
 plaidml_proto_library(
     name = "proto",
     srcs = [
@@ -67,11 +65,12 @@ plaidml_cc_library(
     	"runtime.h",
     ],
     copts = [
-  		'-Iexternal/cmheaders',
   		'-Wno-overflow',
 	],
 	linkopts=[
-		'-rdynamic ' + cm_runtime_lib(),
+		'-rdynamic external/cm_headers/lib/x64/libigfxcmrt.so',
+		#'-rdynamic external/libva/va/.libs/libva.so.2',
+		'-rdynamic /home/yangleiz/Downloads/libva-2.5.0/va/.libs/libva.so.2',
 	],
     visibility = ["//visibility:public"],
     deps = [
@@ -79,7 +78,8 @@ plaidml_cc_library(
         "//base/util",
         "@boost//:filesystem",
         "@boost//:regex",
-        "@cmheaders//:headers",
+        "@cm_headers//:inc",
+        "@libva//:inc",
         "//tile/base",
         "//tile/base:hal",
         "//tile/hal/util:selector",
