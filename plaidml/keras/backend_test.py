@@ -6,6 +6,7 @@ plaidml._internal_set_vlog(0)
 
 import argparse
 import functools
+import logging
 import operator
 import os
 import sys
@@ -50,6 +51,9 @@ if __name__ == '__main__':
     args, remainder = parser.parse_known_args()
 
     plaidml._internal_set_vlog(args.verbose)
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
     if args.fp16:
         pkb.set_floatx('float16')
         DEFAULT_TOL = 1e-2
@@ -1707,14 +1711,14 @@ class TestBackendOps(unittest.TestCase):
         o = b.relu(c)
         return [o]
 
-    # @opTest([[m(1, 96, 96, 192), m(3, 3, 192, 192)]], # For debugging
-    #         do_grads=False,
-    #         num_iterations=10,
-    #         measure_eval_time=True)
-    # def resnetLayer3(self, b, x, k):
-    #     c = b.conv2d(x, k, padding='same')
-    #     o = b.relu(c)
-    #     return [o]
+    @opTest([[m(1, 96, 96, 192), m(3, 3, 192, 192)]],
+            do_grads=False,
+            num_iterations=10,
+            measure_eval_time=True)
+    def resnetLayer3(self, b, x, k):
+        c = b.conv2d(x, k, padding='same')
+        o = b.relu(c)
+        return [o]
 
     @opTest([[m(1, 96, 96, 192), m(8, 8, 192, 192)]],
             do_grads=False,
@@ -1725,14 +1729,14 @@ class TestBackendOps(unittest.TestCase):
         o = b.relu(c)
         return [o]
 
-    # @opTest([[m(1, 64, 64, 256), m(3, 3, 256, 256)]], # For Debugging
-    #         do_grads=False,
-    #         num_iterations=10,
-    #         measure_eval_time=True)
-    # def resnetLayer5(self, b, x, k):
-    #     c = b.conv2d(x, k, padding='same')
-    #     o = b.relu(c)
-    #     return [o]
+    @opTest([[m(1, 64, 64, 256), m(3, 3, 256, 256)]],
+            do_grads=False,
+            num_iterations=10,
+            measure_eval_time=True)
+    def resnetLayer5(self, b, x, k):
+        c = b.conv2d(x, k, padding='same')
+        o = b.relu(c)
+        return [o]
 
     @opTest([[m(1, 64, 64, 128), m(3, 3, 128, 128)]],
             do_grads=False,
@@ -1822,11 +1826,11 @@ if __name__ == '__main__':
         print('Running shard {} of {}'.format(args.shard, args.shard_count))
         loader = unittest.TestLoader()
         suite = unittest.TestSuite()
-        for n, test in enumerate(loader.loadTestsFromTestCase(TestBackendOps)):
-            if n % args.shard_count == args.shard:
-                print("n: {}, test: {}".format(n, test))
+        for test_num, test in enumerate(loader.loadTestsFromTestCase(TestBackendOps)):
+            if test_num % args.shard_count == args.shard:
+                print("test_num: {}, test: {}".format(test_num, test))
                 suite.addTest(test)
         runner = unittest.TextTestRunner()
-        runner.run(suite)
+        exit(not runner.run(suite).wasSuccessful())
     else:
         unittest.main(argv=sys.argv[:1] + remainder, verbosity=args.verbose + 1)

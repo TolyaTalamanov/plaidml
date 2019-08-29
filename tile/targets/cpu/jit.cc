@@ -42,6 +42,7 @@ const char invoker_name_[] = "__invoke_";
 const char arena_name_[] = "__arena";
 const char profile_count_name_[] = "__profile_count_";
 const char profile_ticks_name_[] = "__profile_ticks_";
+const char profile_loop_body_name_[] = "__profile_loop_body_";
 }  // namespace
 
 struct ProgramModule {
@@ -186,10 +187,13 @@ class Compiler : private stripe::ConstStmtVisitor {
   llvm::Value* ReadCycleCounter();
   void ProfileBlockEnter(const stripe::Block& block);
   void ProfileBlockLeave(const stripe::Block& block);
+  void ProfileLoopEnter(const stripe::Block& block);
+  void ProfileLoopLeave(const stripe::Block& block);
   bool isXSMMSuppotedDataType(DataType dataType);
   const DataType GetBlockRefsDataType(const stripe::Block& block);
   llvm::Value* RunTimeLogEntry(void);
   void EmitRunTimeLogEntry(const char* str, const char* extra, llvm::Value* value);
+  void PrintOutputAssembly();
 
   // Gets the leading dimensions and the buffers for an XSMM call if available.
   // @returns true if the XSMM call is applicable, otherwise false.
@@ -241,14 +245,18 @@ ProgramModule Compiler::CompileProgram(const stripe::Block& program) {
   pmb.MergeFunctions = true;
   llvm::legacy::PassManager modopt;
   pmb.populateModulePassManager(modopt);
-  if (VLOG_IS_ON(4)) {
-    IVLOG(4, "\nBefore ============================================================\n");
+  if (config_.print_llvm_ir_simple) {
+    llvm::errs() << "LLVM IR, unoptimized: ================\n";
     module_->print(llvm::errs(), nullptr);
   }
   modopt.run(*module_);
-  if (VLOG_IS_ON(4)) {
-    IVLOG(4, "\nAfter ============================================================\n");
+  if (config_.print_llvm_ir_optimized) {
+    llvm::errs() << "LLVM IR, after optimization: ================\n";
     module_->print(llvm::errs(), nullptr);
+  }
+  if (config_.print_assembly) {
+    llvm::errs() << "Assembly code: ================\n";
+    PrintOutputAssembly();
   }
   // Wrap the finished module and the parameter names into a ProgramModule.
   for (auto& ref : program.refs) {
@@ -299,7 +307,7 @@ void Compiler::GenerateInvoker(const stripe::Block& program, llvm::Function* mai
       std::vector<llvm::Value*> calloc_args{IndexConst(arenaSize_), IndexConst(1)};
       auto buffer = builder_.CreateCall(CallocFunction(), calloc_args, "");
       auto arena_gval = module_->getNamedGlobal(arena_name_);
-      auto arenatype = llvm::ArrayType::get(builder_.getInt8Ty(), arenaSize_)->getPointerTo();
+      auto arenatype = llvm::ArrayType::get(builder_.getInt8Ty(), 1)->getPointerTo();
       builder_.CreateStore(builder_.CreateBitCast(buffer, arenatype), arena_gval);
       allocs.push_back(buffer);
     }
@@ -372,7 +380,7 @@ uint64_t Compiler::MeasureArena(const stripe::Block& block) {
 
 void Compiler::GenerateArena(const stripe::Block& block) {
   arenaSize_ = MeasureArena(block);
-  auto arenatype = llvm::ArrayType::get(builder_.getInt8Ty(), arenaSize_)->getPointerTo();
+  auto arenatype = llvm::ArrayType::get(builder_.getInt8Ty(), 1)->getPointerTo();
   module_->getOrInsertGlobal(arena_name_, arenatype);
   auto gval = module_->getNamedGlobal(arena_name_);
   gval->setInitializer(llvm::Constant::getNullValue(arenatype));
@@ -667,7 +675,6 @@ llvm::Function* Compiler::CompileBlock(const stripe::Block& block) {
     builder_.CreateBr(loops[i].test);
     builder_.SetInsertPoint(loops[i].test);
     llvm::Value* index = builder_.CreateLoad(variable);
-    assert(block.idxs[i].affine == stripe::Affine());
     llvm::Value* range = IndexConst(block.idxs[i].range);
     llvm::Value* limit = builder_.CreateAdd(init, range);
     llvm::Value* go = builder_.CreateICmpULT(index, limit);
@@ -688,12 +695,16 @@ llvm::Function* Compiler::CompileBlock(const stripe::Block& block) {
   builder_.CreateCondBr(go, block_body, block_done);
   builder_.SetInsertPoint(block_body);
 
+  ProfileLoopEnter(block);
+
   // process each statement in the block body, generating code to modify the
   // parameter buffer contents
   std::shared_ptr<stripe::Block> pBlock = std::make_shared<stripe::Block>(block);
   for (const auto& stmt : block.stmts) {
     stmt->Accept(this);
   }
+
+  ProfileLoopLeave(block);
 
   // rejoin instruction flow after the constraint check
   builder_.CreateBr(block_done);
@@ -914,8 +925,8 @@ void Compiler::Visit(const stripe::Block& block) {
       if (ref.has_tag("placed")) {
         auto arena = module_->getNamedGlobal(arena_name_);
         auto baseArenaAddress = builder_.CreateLoad(arena);
-        std::vector<llvm::Value*> idxList{llvm::ConstantInt::get(builder_.getInt64Ty(), ref.offset)};
-        buffer = builder_.CreateGEP(builder_.getInt8Ty()->getPointerTo(), baseArenaAddress, idxList);
+        std::vector<llvm::Value*> idxList{IndexConst(ref.offset)};
+        buffer = builder_.CreateGEP(baseArenaAddress, idxList);
       } else {
         // Allocate new storage for the buffer.
         size_t size = ref.interior_shape.byte_size();
@@ -1628,6 +1639,55 @@ void Compiler::ProfileBlockLeave(const stripe::Block& block) {
   builder_.CreateStore(profile_ticks, profile_ticks_gval);
 }
 
+void Compiler::ProfileLoopEnter(const stripe::Block& block) {
+  if (!config_.profile_loop_body) {
+    return;
+  }
+  // Count the time spent in the loop body, excluding increment/condition
+  // overhead
+  std::string profile_name = profile_loop_body_name_ + block.name;
+  module_->getOrInsertGlobal(profile_name, IndexType());
+  auto profile_gval = module_->getNamedGlobal(profile_name);
+  profile_gval->setInitializer(llvm::Constant::getNullValue(IndexType()));
+  llvm::Value* profile_ticks = builder_.CreateLoad(profile_gval);
+  profile_ticks = builder_.CreateSub(profile_ticks, ReadCycleCounter());
+  builder_.CreateStore(profile_ticks, profile_gval);
+}
+
+void Compiler::ProfileLoopLeave(const stripe::Block& block) {
+  if (!config_.profile_loop_body) {
+    return;
+  }
+  std::string profile_name = profile_loop_body_name_ + block.name;
+  auto profile_gval = module_->getNamedGlobal(profile_name);
+  llvm::Value* profile_ticks = builder_.CreateLoad(profile_gval);
+  profile_ticks = builder_.CreateAdd(profile_ticks, ReadCycleCounter());
+  builder_.CreateStore(profile_ticks, profile_gval);
+}
+
+void Compiler::PrintOutputAssembly() {
+  // duplicate the output module, so we can create an execution engine, which
+  // will give us a target machine, which we can use to disassemble
+  std::unique_ptr<llvm::Module> clone(llvm::CloneModule(*module_));
+  std::string builderErrorStr;
+  auto ee =
+      llvm::EngineBuilder(std::move(clone)).setErrorStr(&builderErrorStr).setEngineKind(llvm::EngineKind::JIT).create();
+  if (ee) {
+    ee->finalizeObject();
+  } else {
+    throw Error("Failed to create ExecutionEngine: " + builderErrorStr);
+  }
+  std::string outputStr;
+  {
+    llvm::legacy::PassManager pm;
+    llvm::raw_string_ostream stream(outputStr);
+    llvm::buffer_ostream pstream(stream);
+    ee->getTargetMachine()->addPassesToEmitFile(pm, pstream, nullptr, llvm::TargetMachine::CGFT_AssemblyFile);
+    pm.run(*module_);
+  }
+  llvm::errs() << outputStr << "\n";
+}
+
 Executable::Executable(const ProgramModule& module) : parameters_(module.parameters) {
   std::string errStr;
   std::unique_ptr<llvm::LegacyJITSymbolResolver> rez(new Runtime(module.externals));
@@ -1670,6 +1730,11 @@ void Executable::SetPerfAttrs(stripe::Block* block) {
   if (ticks_addr) {
     block->set_attr("execution_ticks", *reinterpret_cast<int64_t*>(ticks_addr));
   }
+  std::string loop_body_name = profile_loop_body_name_ + block->name;
+  uint64_t loop_ticks_addr = engine_->getGlobalValueAddress(loop_body_name);
+  if (loop_ticks_addr) {
+    block->set_attr("loop_body_ticks", *reinterpret_cast<int64_t*>(loop_ticks_addr));
+  }
   // Recurse through nested blocks.
   for (const auto& stmt : block->stmts) {
     if (stmt->kind() == stripe::StmtKind::Block) {
@@ -1699,7 +1764,7 @@ void prng_step(uint32_t* in_state, uint32_t* out_state, uint32_t* buf, size_t co
 }
 
 void RunTimeLogEntry(char* str, char* extra, uint64_t address) {
-  IVLOG(1, "RunTimeLogEntry: " << str << ":" << extra << ":" << std::hex << address);
+  IVLOG(1, "RunTimeLogEntry: " << str << ":" << extra << ": 0x" << std::hex << address);
 }
 }  // namespace rt
 
