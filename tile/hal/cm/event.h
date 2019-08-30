@@ -32,17 +32,17 @@ class Event final : public hal::Event {
   // input vector to keep the
   // events alive.
   static std::vector<CmEvent*> Downcast(const std::vector<std::shared_ptr<hal::Event>>& events,
-                                        const std::unique_ptr<DeviceState::QueueStruct>& queue);
+                                        const DeviceState::QueueStruct* queue);
 
   // Returns a future that waits for all of the supplied events to complete.
   static boost::future<std::vector<std::shared_ptr<hal::Result>>> WaitFor(
       const std::vector<std::shared_ptr<hal::Event>>& events, std::shared_ptr<DeviceState> device_state);
 
   Event(const context::Context& ctx, std::shared_ptr<DeviceState> device_state, CmEvent* cm_event,
-        const std::unique_ptr<DeviceState::QueueStruct>& queue);
+        const DeviceState::QueueStruct* queue);
 
   Event(const context::Context& ctx, std::shared_ptr<DeviceState> device_state, CmEvent* cm_event,
-        const std::unique_ptr<DeviceState::QueueStruct>& queue, const std::shared_ptr<hal::Result>& result);
+        const DeviceState::QueueStruct* queue, const std::shared_ptr<hal::Result>& result);
 
   ~Event() final;
 
@@ -60,7 +60,7 @@ class Event final : public hal::Event {
   static void EventComplete(CmEvent* evt, int32_t status, void* data);
 
   context::Context ctx_;
-  const std::unique_ptr<DeviceState::QueueStruct>& queue_;
+  const DeviceState::QueueStruct* queue_;
   std::mutex mu_;
   bool started_ = false;
   CmEvent* cm_event_;

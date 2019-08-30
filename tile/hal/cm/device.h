@@ -20,7 +20,7 @@ namespace cm {
 // Device implements the hal::Device model as a single cm device.
 class Device final : public hal::Device {
  public:
-  Device(const context::Context& ctx, CmDevice* pCmDev, proto::DeviceInfo dinfo);
+  Device(const context::Context& ctx, proto::DeviceInfo dinfo);
 
   void Initialize(const hal::proto::HardwareSettings& settings) final;
 

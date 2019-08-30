@@ -108,7 +108,7 @@ boost::future<void*> SharedBuffer::MapDiscard(const std::vector<std::shared_ptr<
 
 std::shared_ptr<hal::Event> SharedBuffer::Unmap(const context::Context& ctx) {
   CmEvent* cm_event;
-  return std::make_shared<Event>(ctx, arena_->device_state(), cm_event, arena_->device_state()->cm_queue_);
+  return std::make_shared<Event>(ctx, arena_->device_state(), cm_event, arena_->device_state()->cmqueue());
 }
 
 SharedMemory::SharedMemory(const std::shared_ptr<DeviceState>& device_state) : device_state_{device_state} {}

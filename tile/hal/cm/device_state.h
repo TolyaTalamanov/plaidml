@@ -23,23 +23,34 @@ class DeviceState {
   };
   void Flush() const;
 
-  DeviceState(const context::Context& ctx, CmDevice* pCmDev, proto::DeviceInfo dinfo);
+  DeviceState(const context::Context& ctx, proto::DeviceInfo dinfo);
 
   ~DeviceState();
 
-  void Initialize();
+  void MakeDevice();
 
   const proto::DeviceInfo info() const { return info_; }
-  CmDevice* cmdev() { return pCmDev_; }
+  CmDevice* cmdev() {
+    if (pCmDev_ == nullptr) {
+      MakeDevice();
+    }
+    return pCmDev_;
+  }
+  QueueStruct* cmqueue() {
+    if (pCmDev_ == nullptr) {
+      MakeDevice();
+    }
+    return cm_queue_;
+  }
+
   const context::Clock& clock() const { return clock_; }
   const context::proto::ActivityID& id() const { return id_; }
 
   void FlushCommandQueue();
 
-  std::unique_ptr<QueueStruct> cm_queue_;
-
  private:
-  CmDevice* pCmDev_;
+  QueueStruct* cm_queue_;
+  CmDevice* pCmDev_ = nullptr;
   const proto::DeviceInfo info_;
   const context::Clock clock_;
   const context::proto::ActivityID id_;

@@ -5,7 +5,9 @@
 #include <stdlib.h>
 
 #include <exception>
+#include <map>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -23,6 +25,7 @@
 #include "base/util/logging.h"
 #include "base/util/uuid.h"
 #include "tile/hal/cm/emitcm.h"
+#include "tile/hal/cm/err.h"
 #include "tile/hal/cm/library.h"
 #include "tile/hal/cm/runtime.h"
 #include "tile/lang/semprinter.h"
@@ -81,19 +84,19 @@ CmProgram* LoadProgram(CmDevice* pCmDev, const char* code) {
   FILE* pISA = fopen(code, "rb");
 
   fseek(pISA, 0, SEEK_END);
-  int codeSize = ftell(pISA);
+  uint codeSize = ftell(pISA);
   rewind(pISA);
 
   auto pCommonISACode = malloc(codeSize);
 
-  auto check_err = fread(pCommonISACode, 1, codeSize, pISA);
-  if (check_err) {
-    check_err = 0;
+  auto r = fread(pCommonISACode, 1, codeSize, pISA);
+  if (r != codeSize) {
+    throw std::runtime_error("read isa file error!");
   }
   fclose(pISA);
 
   CmProgram* program = NULL;
-  pCmDev->LoadProgram(pCommonISACode, codeSize, program);
+  cm_result_check(pCmDev->LoadProgram(pCommonISACode, codeSize, program));
   free(pCommonISACode);
 
   return program;
@@ -369,11 +372,13 @@ boost::future<std::unique_ptr<hal::Library>> Compiler::Build(const context::Cont
       cmd += src_path.string();
       cmd += " -march=GEN9 -isystem " + cm_root + "/compiler/include -o ";
       cmd += isa_path.string();
+
       auto check_err = system(cmd.c_str());
 
       if (check_err) {
         check_err = 0;
       }
+
       CmProgram* program = LoadProgram(pCmDev, isa_path.c_str());
 
       if (!program) {

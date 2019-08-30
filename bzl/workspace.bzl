@@ -88,7 +88,7 @@ def plaidml_workspace():
         name = "cm_headers",
         url = "https://github.com/intel/cm-compiler/releases/download/Release_20190717/Linux_C_for_Metal_Development_Package_20190717.zip",
         sha256 = "4549496e3742ade2ff13e804654cb4ee7ddabb3b95dbc1fdeb9ca22141f317d5",
-        strip_prefix = "/Linux_C_for_Metal_Development_Package_20190717/runtime/",
+        strip_prefix = "Linux_C_for_Metal_Development_Package_20190717",
         build_file = Label("//bzl:cm_headers.BUILD"),
     )
 
@@ -96,7 +96,7 @@ def plaidml_workspace():
         name = "libva",
         url = "https://github.com/intel/libva/releases/download/2.5.0/libva-2.5.0.tar.bz2",
         sha256 = "3aa89cd369a506ac4dbe5de7c0ef5da4f3d220bf986403f02fa1f6f702af6878",
-        strip_prefix = "/libva-2.5.0/",
+        strip_prefix = "libva-2.5.0",
         build_file = Label("//bzl:libva.BUILD"),
     )
 

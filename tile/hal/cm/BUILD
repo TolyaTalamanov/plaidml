@@ -63,14 +63,14 @@ plaidml_cc_library(
     ],
     hdrs = [
     	"runtime.h",
+    	"@libva//:configure-make",
     ],
     copts = [
   		'-Wno-overflow',
 	],
 	linkopts=[
-		'-rdynamic external/cm_headers/lib/x64/libigfxcmrt.so',
-		#'-rdynamic external/libva/va/.libs/libva.so.2',
-		'-rdynamic /home/yangleiz/Downloads/libva-2.5.0/va/.libs/libva.so.2',
+		'-rdynamic external/cm_headers/runtime/lib/x64/libigfxcmrt.so',
+		'-rdynamic external/libva/va/.libs/libva.so.2',
 	],
     visibility = ["//visibility:public"],
     deps = [

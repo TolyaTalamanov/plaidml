@@ -19,7 +19,7 @@ std::shared_ptr<Event> Event::Downcast(const std::shared_ptr<hal::Event>& event)
 }
 
 std::vector<CmEvent*> Event::Downcast(const std::vector<std::shared_ptr<hal::Event>>& events,
-                                      const std::unique_ptr<DeviceState::QueueStruct>& queue) {
+                                      const DeviceState::QueueStruct* queue) {
   std::vector<CmEvent*> result;
   for (const auto& event : events) {
     auto evt = Downcast(event);
@@ -49,7 +49,7 @@ boost::future<std::vector<std::shared_ptr<hal::Result>>> Event::WaitFor(
     return boost::make_ready_future(std::move(results));
   }
   CmEvent* e = nullptr;
-  const auto& queue = device_state->cm_queue_;
+  const auto& queue = device_state->cmqueue();
   context::Context ctx{};
   Event event{ctx, device_state, e, queue};
   auto future = event.GetFuture();
@@ -73,12 +73,12 @@ boost::future<std::vector<std::shared_ptr<hal::Result>>> Event::WaitFor(
 }
 
 Event::Event(const context::Context& ctx, std::shared_ptr<DeviceState> device_state, CmEvent* cm_event,
-             const std::unique_ptr<DeviceState::QueueStruct>& queue)
+             const DeviceState::QueueStruct* queue)
     : Event(ctx, device_state, cm_event, queue, std::make_shared<Result>(ctx, device_state, cm_event)) {}
 
 Event::Event(const context::Context& ctx, std::shared_ptr<DeviceState> device_state, CmEvent* cm_event,
-             const std::unique_ptr<DeviceState::QueueStruct>& queue, const std::shared_ptr<hal::Result>& result)
-    : ctx_{ctx}, queue_{std::move(queue)}, cm_event_{cm_event}, state_{std::make_shared<FutureState>()} {
+             const DeviceState::QueueStruct* queue, const std::shared_ptr<hal::Result>& result)
+    : ctx_{ctx}, queue_{queue}, cm_event_{cm_event}, state_{std::make_shared<FutureState>()} {
   state_->result = result;
   if (!cm_event_) {
     state_->prom.set_value(state_->result);

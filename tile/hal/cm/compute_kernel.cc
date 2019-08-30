@@ -45,10 +45,10 @@ std::shared_ptr<hal::Event> ComputeKernel::Run(const context::Context& ctx,
                                                const std::vector<std::shared_ptr<hal::Buffer>>& params,
                                                const std::vector<std::shared_ptr<hal::Event>>& dependencies,
                                                bool enable_profiling) {
-  const auto& queue = device_state_->cm_queue_;
+  const auto& queue = device_state_->cmqueue();
   std::lock_guard<std::mutex> lock{mu_};
 
-  auto pCmQueue = device_state_->cm_queue_->pCmQueue_;
+  auto pCmQueue = device_state_->cmqueue()->pCmQueue_;
 
   for (std::size_t i = 0; i < params.size(); ++i) {
     Buffer* buf = Buffer::Downcast(params[i].get());
@@ -112,6 +112,7 @@ std::shared_ptr<hal::Event> ComputeKernel::Run(const context::Context& ctx,
   }
 
   auto result = std::make_shared<KernelResult>(activity.ctx(), device_state_, done, ki_);
+
   return std::make_shared<Event>(activity.ctx(), device_state_, std::move(done), queue, std::move(result));
 }
 

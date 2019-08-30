@@ -1,6 +1,6 @@
 cc_library(
     name = "inc",
-    hdrs = glob(["include/*.h"]),
-    includes = ["include"],
+    hdrs = glob(["runtime/include/*.h"]),
+    includes = ["runtime/include"],
     visibility = ["//visibility:public"],
 )

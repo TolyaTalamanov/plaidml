@@ -50,7 +50,7 @@ std::shared_ptr<hal::Event> CMMemBuffer::Unmap(const context::Context& ctx) {
   ReleaseDeviceBuffer();
   context::Activity activity{ctx, "tile::hal::cm::Buffer::Unmap"};
   CmEvent* e;
-  return std::make_shared<Event>(activity.ctx(), device_state_, std::move(e), device_state_->cm_queue_);
+  return std::make_shared<Event>(activity.ctx(), device_state_, std::move(e), device_state_->cmqueue());
 }
 
 }  // namespace cm
