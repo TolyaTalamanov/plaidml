@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "base/util/error.h"
+#include "tile/math/util.h"
 
 namespace vertexai {
 namespace tile {
@@ -163,6 +164,8 @@ namespace fifo_scheduler {
 // is already selected for L1 cache performance.
 constexpr std::uint64_t kMaxInputDeltatime = 100 * std::kilo::num;
 
+constexpr double kLowMemoryPercentage = 0.20;
+
 // Used to define the heap ordering for the pending-step heap.
 bool PendingStepHeapLess(const PendingStep* lhs, const PendingStep* rhs) {
   // The requirement is that steps with no pending dependencies must come before steps that have
@@ -174,6 +177,11 @@ bool PendingStepHeapLess(const PendingStep* lhs, const PendingStep* rhs) {
 // Rounds a byte size up to the next divisible-by-alignment value.
 std::uint64_t AlignUp(Build* b, std::uint64_t byte_size) {
   return ((byte_size + b->alignment - 1) / b->alignment) * b->alignment;
+}
+
+// If the scheduler is lack of memory
+bool LowAvailableMemory(Build* b) {
+  return b->mem_available < b->max_mem * kLowMemoryPercentage;
 }
 
 // Adds a synthetic output-consuming step to a schedule.
@@ -285,6 +293,9 @@ void InitStep(Build* b, const schedule::Step& step,
               std::unordered_map<schedule::Alloc*, PendingStep*>* most_recent_writers) {
   auto* ps = NewPendingStep(b, &step);
 
+  ps->dir_free_mem = 0;
+  ps->may_free_mem = 0;
+
   // Build up the step's allocs.
   std::vector<schedule::Alloc*> allocs;
   allocs.reserve(step.inputs.size() + step.outputs.size());
@@ -306,6 +317,7 @@ void InitStep(Build* b, const schedule::Step& step,
       if (!res.second) {
         res.first->second++;
       }
+      ps->dir_free_mem += AlignUp(b, alloc->byte_size);
     }
     for (const schedule::OutputInfo& oi : step.outputs) {
       auto mrw_ins = most_recent_writers->emplace(oi.allocp, ps);
@@ -502,6 +514,151 @@ void RemovePendingStep(std::vector<PendingStep*>* pending, PendingStep* ps) {
   }
 }
 
+void InitMayFreeMem(const Build& b) {
+  // The pending steps without any dependent
+  std::queue<PendingStep*> zero_dep;
+  // The pending steps with dependents map to their #dependents
+  std::unordered_map<PendingStep*, std::size_t> dep_counts;
+
+  for (PendingStep* ps : b.pending) {
+    if (ps->dependents.empty()) {
+      zero_dep.push(ps);
+    }
+    else {
+      // Count non-duplicated dependents
+      std::unordered_set<PendingStep*> deps;
+      deps.insert(ps->dependents.begin(), ps->dependents.end());
+      for (PendingStep* dep : deps) {
+        dep->rev_deps.emplace(ps);
+      }
+      dep_counts.emplace(ps, deps.size());
+    }
+    ps->may_free_mem = ps->dir_free_mem;
+  }
+
+  // Topological order by remaining dependents
+  while (!dep_counts.empty() || !zero_dep.empty()) {
+    if (zero_dep.empty()) {
+      throw std::runtime_error("All pending steps have dependents.");
+    }
+    PendingStep* ps = zero_dep.front();
+    zero_dep.pop();
+    std::size_t num_preds = ps->rev_deps.size();
+    if (num_preds == 0) {
+      continue;
+    }
+    // How much memory ps can propagate to each of its predecessors
+    std::size_t each_free_mem = math::RoundUp(ps->may_free_mem, num_preds);
+    // Traverse ps' predecessors
+    for (PendingStep* pred : ps->rev_deps) {
+      pred->may_free_mem += each_free_mem;
+      const auto& it = dep_counts.find(pred);
+      if ((--it->second) == 0) {
+        // If the predecessor has only the successor ps,
+        // move it into zero_dep
+        zero_dep.push(it->first);
+        dep_counts.erase(it);
+      }
+    }
+  }
+}
+
+// When scheduling ps, we have to adjust may_free_mem.
+// If we free the memory held by ps, it affects ps' depentents' predecessor
+void AdjustMayFreeMem(PendingStep* ps) {
+  // All steps affected by the adjustion
+  std::unordered_set<PendingStep*> all_steps;
+  // Helper queue for computing all_steps
+  std::queue<PendingStep*> step_queue;
+
+  for (PendingStep* dep : ps->dependents) {
+    // Remove the relation ps==>dep
+    dep->rev_deps.erase(ps);
+    step_queue.push(dep);
+    all_steps.emplace(dep);
+  }
+
+  // Find all steps that is affected by the adjustion
+  while (!step_queue.empty()) {
+    PendingStep* ps = step_queue.front();
+    step_queue.pop();
+    for (PendingStep* pred : ps->rev_deps) {
+      if (all_steps.find(pred) == all_steps.end()) {
+        all_steps.emplace(pred);
+        step_queue.push(pred);
+      }
+    }
+  }
+
+  // The ready steps without any remaining reverse dependents
+  std::unordered_map<PendingStep*, std::size_t> ready;
+  // The processing steps with some reverse dependents
+  std::unordered_map<PendingStep*, std::size_t> processing;
+
+  // Traverse ps' dependents and compute the adjusting delta for each one
+  for (PendingStep* dep : ps->dependents) {
+    std::size_t num_preds = dep->rev_deps.size();
+    if (num_preds > 0) {
+      std::size_t old_size = math::RoundUp(dep->may_free_mem, num_preds + 1);
+      std::size_t new_size = math::RoundUp(dep->may_free_mem, num_preds);
+      // Each dep's predecessor should increase may_free_mem by delta
+      std::size_t delta = new_size - old_size;
+      // Deteremine if dep has any other dependent affected by the adjustion
+      // If no, dep is ready; otherwise, put it into processing pool
+      bool is_ready = !std::any_of(dep->dependents.begin(), dep->dependents.end(),
+        [&](PendingStep* succ) { return all_steps.find(succ) != all_steps.end(); });
+      if (is_ready) {
+        ready.emplace(dep, delta);
+      }
+      else {
+        processing.emplace(dep, delta);
+      }
+    }
+  }
+
+  // Topological order by remaining reverse dependents
+  while (!ready.empty()) {
+    // Pick up any ready step
+    PendingStep* ps = ready.begin()->first;
+    std::size_t cur_delta = ready.begin()->second;
+    ready.erase(ready.begin());
+
+    if (ps->rev_deps.size() == 0) {
+      continue;
+    }
+    // How much the ready step can propagate to each of its predecessors
+    std::size_t each_delta = math::RoundUp(cur_delta, ps->rev_deps.size());
+    // Traverse its predecessors
+    for (PendingStep* pred : ps->rev_deps) {
+      // Propagate the delta memory to the predecessor
+      const auto& it = processing.find(pred);
+      if (it == processing.end()) {
+        processing.emplace(pred, each_delta);
+      }
+      else {
+        it->second += each_delta;
+      }
+      // Determine if the predecessor has any dependent that,
+      // 1) is affected by the adjustion; and
+      // 2) has not been completely processed (in ready or processing pool)
+      // If no, the predecessor is ready and move it to the ready pool
+      bool is_ready = !std::any_of(pred->dependents.begin(), pred->dependents.end(),
+        [&](PendingStep* dep) {
+          return all_steps.find(dep) != all_steps.end() &&
+            (ready.find(dep) != ready.end() || processing.find(dep) != processing.end());
+        }
+      );
+      if (is_ready) {
+        ready.emplace(pred, processing.at(pred));
+        processing.erase(pred);
+      }
+    }
+  }
+  if (!processing.empty()) {
+    throw std::runtime_error("Adjusting may_free_mem: there are still some steps in the processing pool.");
+  }
+}
+
 // Returns true iff lhs is a better plan than rhs.
 bool IsBetterPlan(Build* b, const StepPlan& lhs, const StepPlan& rhs) {
   // A plan below the memory limit is axiomatically better than one above; a plan that
@@ -516,6 +673,13 @@ bool IsBetterPlan(Build* b, const StepPlan& lhs, const StepPlan& rhs) {
     }
   } else if (b->mem_available < lhs.mem_needed()) {
     return false;
+  }
+
+  // When we are short of memory, try to schedule the steps that releases more memory
+  if (LowAvailableMemory(b)) {
+    if (lhs.pending_step()->may_free_mem != rhs.pending_step()->may_free_mem) {
+      return lhs.pending_step()->may_free_mem > rhs.pending_step()->may_free_mem;
+    }
   }
 
   // Steps whose inputs are in cache are better than steps whose inputs are not in cache.
@@ -553,6 +717,7 @@ bool ScheduleRunnableStep(Build* b) {
   if (!best) {
     return false;
   }
+  AdjustMayFreeMem(best.pending_step());
   best.Apply(b);
   return true;
 }
@@ -757,6 +922,9 @@ schedule::Schedule FifoScheduler::BuildSchedule(const tile::proto::Program& prog
 
   // Heapify the pending steps.
   b.pending = InitPendingSteps(&b.pending_steps_storage);
+
+  // Initialize the memory size may be freed if each step finishes
+  InitMayFreeMem(b);
 
   // Process the heap.
   while (b.pending.size()) {

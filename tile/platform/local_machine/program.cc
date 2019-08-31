@@ -324,7 +324,8 @@ boost::future<void> Program::Run(const context::Context& ctx,
     ++num_runs_;
   }
   else {
-    throw std::runtime_error("No enough memory for the current schedule.");
+    throw std::runtime_error(str(boost::format("No enough memory for the current schedule: required %1%, available %2%")
+      % alloc_mem_ % MaxAvailableMemory()));
   }
 
   IVLOG(2, "  Inputs:");

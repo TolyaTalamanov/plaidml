@@ -49,11 +49,21 @@ struct PendingStep {
   // it is waiting on multiple outputs from this step.
   std::list<PendingStep*> dependents;
 
+  // The reverse dependents for backward search
+  std::unordered_set<PendingStep*> rev_deps;
+
   // The maximum distance from this step to all of its downstream outputs.
   std::uint64_t distance;
 
   // Computed work groups (max of step and device work groups)
   std::uint64_t work_groups;
+
+  // How much memory will be directly released if this step finishes
+  std::uint64_t dir_free_mem;
+
+  // How much memory may be indirectly released (including directly released memory)
+  // if this step finishes
+  std::uint64_t may_free_mem;
 };
 
 // Tracks the state of a step that's been scheduled.
@@ -83,6 +93,7 @@ struct Build {
         std::size_t alignment_, std::uint64_t mem_available_, std::uint64_t work_group_limit_)
       : program{&program_},
         kl{&kl_},
+        max_mem{mem_available_},
         running{scheduled.end()},
         alignment{alignment_},
         mem_available{mem_available_},
@@ -90,6 +101,7 @@ struct Build {
 
   const tile::proto::Program* program;
   const lang::KernelList* kl;
+  const std::uint64_t max_mem;
   std::list<PendingStep> pending_steps_storage;
   std::vector<PendingStep*> pending;
   std::list<ScheduledStep> scheduled;
