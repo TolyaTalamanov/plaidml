@@ -1,6 +1,7 @@
 # Copyright 2017-2018 Intel Corporation.
 
 load("//bzl:plaidml.bzl", "plaidml_cc_library", "plaidml_cc_test", "plaidml_proto_library")
+load("@cm//:build_defs.bzl", "if_cm_is_configured")
 
 plaidml_proto_library(
     name = "proto",
@@ -16,7 +17,7 @@ plaidml_proto_library(
 
 plaidml_cc_library(
     name = "cm",
-    srcs = [
+    srcs = if_cm_is_configured([
     	"buffer.cc",
         "buffer.h",
         "mem_arena.cc",
@@ -60,39 +61,41 @@ plaidml_cc_library(
         "kernel.h",
         "cm.cc",
         "shared_memory.cc",
-    ],
+    ]),
     hdrs = [
     	"runtime.h",
-    	"@libva//:configure-make",
-    ],
+    ]+ if_cm_is_configured([
+        "@libva//:configure-make",
+    ]),
     copts = [
   		'-Wno-overflow',
 	],
-	linkopts=[
+	linkopts=if_cm_is_configured([
 		'-rdynamic external/cm_headers/runtime/lib/x64/libigfxcmrt.so',
 		'-rdynamic external/libva/va/.libs/libva.so.2',
-	],
+	]),
     visibility = ["//visibility:public"],
     deps = [
         ":proto_cc",
         "//base/util",
         "@boost//:filesystem",
         "@boost//:regex",
-        "@cm_headers//:inc",
-        "@libva//:inc",
         "//tile/base",
         "//tile/base:hal",
         "//tile/hal/util:selector",
         "//tile/lang",
         "//tile/proto:proto_cc",
         "//tile/proto:support",
-    ],
+    ]+ if_cm_is_configured([
+        "@cm_headers//:inc",
+        "@libva//:inc",
+    ]),
     alwayslink = 1,
 )
 
 plaidml_cc_test(
     name = "platform_test",
-    srcs = ["platform_test.cc"],
+    srcs = if_cm_is_configured(["platform_test.cc"]),
     deps = [
         ":cm",
         "//tile/base:platform_test",
