@@ -1,4 +1,5 @@
 load("//bzl:plaidml.bzl", "plaidml_cc_library", "plaidml_proto_library")
+load("//vendor/mlir:mlir.bzl", "COPTS")
 
 plaidml_proto_library(
     name = "proto",
@@ -13,6 +14,7 @@ plaidml_cc_library(
         "*.cc",
         "*.h",
     ]),
+    copts = COPTS,
     visibility = ["//visibility:public"],
     deps = [
         ":proto_cc",
@@ -20,8 +22,8 @@ plaidml_cc_library(
         "//base/util",
         "//tile/bilp",
         "//tile/stripe",
-	"//pmlc/dialect/mir:transcode",
-	"//pmlc/dialect/mir:passes",
+        "//pmlc/dialect/stripe:transcode",
+        "//pmlc/dialect/stripe:passes",
         "@boost//:filesystem",
     ] + select({
         "//toolchain:windows_x86_64": [],

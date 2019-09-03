@@ -86,7 +86,6 @@ def _log_call(func):
             arg_str_list = list()
             for i, arg in enumerate(args):
                 arg_str_list.append('{}: {}'.format(list(sig.parameters)[i][0], arg))
-            logger.debug(kwargs)  # TODO
             for k, v in kwargs.items():
                 arg_str_list.append('{}: {}'.format(k, v))
             logger.debug('{}({})'.format(func.__name__, ', '.join(arg_str_list)))
@@ -106,6 +105,10 @@ class _Function(object):
         self._cache = {}
 
     def __call__(self, inputs):
+        logger.debug('_Function: {}({})'.format(self._name, inputs))
+        inputs = [
+            np.array(inp) if isinstance(inp, (six.integer_types, float)) else inp for inp in inputs
+        ]
         input_shapes = tuple([x.shape for x in inputs])
         # logger.debug('_Function: {}({})'.format(self._name, input_shapes))
         exe = self._cache.get(input_shapes)
@@ -125,7 +128,7 @@ class _Function(object):
 
         def make_buffer(tensor):
             # convert LogicalShape into TensorShape
-            shape = plaidml.TensorShape(tensor.shape.dtype, tensor.shape.int_dims)
+            shape = tensor.shape.into_TensorShape()
             return plaidml.Buffer(_device, shape)
 
         input_bindings = [(x.tensor, make_buffer(x.tensor)) for x in self._inputs]
@@ -292,17 +295,19 @@ def abs(x):
 
 @_log_call
 def all(x, axis=None, keepdims=False):
-    _report_unimplemented('all')
+    return _KerasNode('all', tensor=plaidml_op.all(x.tensor, axis, keepdims))
 
 
 @_log_call
 def any(x, axis=None, keepdims=False):
-    _report_unimplemented('any')
+    return _KerasNode('any', tensor=plaidml_op.any(x.tensor, axis, keepdims))
 
 
 @_log_call
 def arange(start, stop=None, step=1, dtype='int32'):
-    _report_unimplemented('arange')
+    if isinstance(dtype, plaidml.DType):
+        dtype = dtype.into_numpy()
+    return variable(np.arange(start, stop, step, dtype), dtype=dtype)
 
 
 @_log_call
@@ -327,17 +332,25 @@ def batch_dot(x, y, axes=None, name=None):
 
 @_log_call
 def batch_flatten(x):
-    _report_unimplemented('batch_flatten')
-
-
-@_log_call
-def batch_set_value(tuples):
-    _report_unimplemented('batch_set_value')
+    I = x.tensor
+    I_dims = edsl.TensorDims(I.shape.ndims)
+    I.bind_dims(*I_dims)
+    if len(I_dims) == 1:
+        return reshape(x, [I_dims[0], 1])
+    if len(I_dims) == 2:
+        return x
+    return reshape(x, [I_dims[0]] + [functools.reduce((lambda x, y: x * y), I_dims[1:])])
 
 
 @_log_call
 def batch_get_value(xs):
-    _report_unimplemented('batch_get_value')
+    return [get_value(x) for x in xs]
+
+
+@_log_call
+def batch_set_value(tuples):
+    for pair in tuples:
+        set_value(pair[0], pair[1])
 
 
 @_log_call
@@ -494,6 +507,11 @@ def conv(x,
     else:
         group_layout = 'none'
         autogroup_mode = 'ungrouped'
+    rank = x.tensor.shape.ndims - 2
+    if strides is None:
+        strides = tuple(1 for _ in range(rank))
+    if dilation_rate is None:
+        dilation_rate = tuple(1 for _ in range(rank))
     return _KerasNode(
         'conv',
         tensor=plaidml_op.convolution(
@@ -526,6 +544,11 @@ def conv_transpose(x, kernel, output_shape, strides, padding, data_format, dilat
         output_shape = output_shape[2:]
     else:
         raise ValueError('Could not parse data_format "{}"'.format(data_format))
+    rank = x.tensor.shape.ndims - 2
+    if strides is None:
+        strides = tuple(1 for _ in range(rank))
+    if dilation_rate is None:
+        dilation_rate = tuple(1 for _ in range(rank))
     return _KerasNode(
         'conv',
         tensor=plaidml_op.convolution(
@@ -947,7 +970,7 @@ def max(x, axis=None, keepdims=False):
 
 @_log_call
 def maximum(x, y):
-    return _KerasNode('maximum', tensor=edsl.max(x.tensor, y.tensor))
+    return _KerasNode('maximum', tensor=plaidml_op.maximum(x.tensor, y.tensor))
 
 
 @_log_call
@@ -962,12 +985,12 @@ def min(x, axis=None, keepdims=False):
 
 @_log_call
 def minimum(x, y):
-    return _KerasNode('minimum', tensor=edsl.min(x.tensor, y.tensor))
+    return _KerasNode('minimum', tensor=plaidml_op.minimum(x.tensor, y.tensor))
 
 
 @_log_call
 def moving_average_update(x, value, momentum):
-    _report_unimplemented('moving_average_update')
+    return (x, x * momentum + value * (1. - momentum))
 
 
 # No _log_call as this manages logging specially
@@ -1072,9 +1095,9 @@ def permute_dimensions(x, pattern=None):
 def placeholder(shape=None, ndim=None, dtype=None, sparse=False, name=None):
     dtype = plaidml.DType.from_numpy(dtype or floatx())
     # TODO: Need to support empty shapes; once supported, convert below to `if _ is not None`
-    if shape:
+    if shape is not None:
         return _KerasNode('placeholder', shape=edsl.LogicalShape(dtype, shape), name=name)
-    if ndim:
+    if ndim is not None:
         return _KerasNode('placeholder', shape=edsl.LogicalShape(dtype, [0] * ndim), name=name)
     raise ValueError()
 
@@ -1127,6 +1150,10 @@ def print_tensor(x, message=''):
 
 @_log_call
 def prod(value, axis=None, keepdims=False):
+    if isinstance(value, (tuple, list)):
+        # In this case, a product of the elements of the tuple/list is being requested,
+        # rather than a within-tensor product
+        return functools.reduce(lambda x, y: x * y, value)
     return _KerasNode('prod', tensor=plaidml_op.prod(value.tensor, axis, keepdims))
 
 
@@ -1283,12 +1310,26 @@ def reshape(x, dims):
 
 @_log_call
 def resize_images(x, height_factor, width_factor, data_format, interpolation='nearest'):
-    _report_unimplemented('resize_images')
+    return _KerasNode('resize_images',
+                      tensor=plaidml_op.image_resize(x.tensor, (height_factor, width_factor),
+                                                     interpolation,
+                                                     _normalize_data_format(data_format)))
 
 
 @_log_call
 def resize_volumes(x, depth_factor, height_factor, width_factor, data_format):
-    _report_unimplemented('resize_volumes')
+    data_format = _normalize_data_format(data_format)
+    if data_format == 'ncx':
+        ret = repeat_elements(x, depth_factor, axis=2)
+        ret = repeat_elements(ret, height_factor, axis=3)
+        ret = repeat_elements(ret, width_factor, axis=4)
+    elif data_format == 'nxc':
+        ret = repeat_elements(x, depth_factor, axis=1)
+        ret = repeat_elements(ret, height_factor, axis=2)
+        ret = repeat_elements(ret, width_factor, axis=3)
+    else:
+        raise ValueError('Invalid data_format {}'.format(data_format))
+    return ret
 
 
 @_log_call
@@ -1426,7 +1467,11 @@ def set_learning_phase(value):
 
 @_log_call
 def set_value(x, value):
-    _report_unimplemented('set_value')
+    dtype = plaidml.DType.from_numpy(value.dtype)
+    tensor_shape = plaidml.TensorShape(dtype, value.shape)
+    buffer = plaidml.Buffer(_device, tensor_shape)
+    buffer.copy_from_ndarray(value)
+    x.tensor.set_param_value(buffer)
 
 
 @_log_call
@@ -1468,7 +1513,7 @@ def softmax(x, axis=None, name=None):
         axis = ndims - 1
     axis = _normalize_axis(axis=axis, ndims=ndims, name=name + ' (softmax)')
     if ndims == 2 and axis == 1:
-        return _KerasNode(name, tensor=plaidml_op.softmax(I, axis=1))
+        return _KerasNode('softmax', name=name, tensor=plaidml_op.softmax(I, axis=1))
 
     if axis == 0:
         group = 1
@@ -1476,7 +1521,7 @@ def softmax(x, axis=None, name=None):
         group = functools.reduce(lambda x, y: x * y, I_dims[:axis])
     values = functools.reduce(lambda x, y: x * y, I_dims[axis:])
     flat_x = reshape(x, (group, values))
-    result = _KerasNode(name, tensor=plaidml_op.softmax(flat_x.tensor, axis=1))
+    result = _KerasNode('softmax', name=name, tensor=plaidml_op.softmax(flat_x.tensor, axis=1))
     return reshape(result, I_dims)
 
 
@@ -1553,6 +1598,10 @@ def stop_gradient(variables):
 
 @_log_call
 def sum(x, axis=None, keepdims=False):
+    if isinstance(x, (tuple, list)):
+        # In this case, a sum of the elements of the tuple/list is being requested,
+        # rather than a within-tensor sum
+        return functools.reduce(lambda a, b: a + b, x)
     return _KerasNode('sum', tensor=plaidml_op.sum(x.tensor, axis, keepdims))
 
 

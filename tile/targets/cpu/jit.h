@@ -8,23 +8,12 @@
 #include <vector>
 
 #include "tile/stripe/stripe.h"
+#include "tile/targets/cpu/config.h"
 
 namespace vertexai {
 namespace tile {
 namespace targets {
 namespace cpu {
-
-// The JIT provides builtin implementations for a variety of intrinsics, but
-// additional, external handlers may also be provided for context-specific
-// services. The JIT will provide the actual datatypes of the input scalars;
-//
-typedef std::function<void*(std::vector<DataType>*, DataType*)> External;
-
-struct Config {
-  bool profile_block_execution = false;
-  bool profile_loop_body = false;
-  std::map<std::string, External> externals;
-};
 
 class Native {
   struct Impl;

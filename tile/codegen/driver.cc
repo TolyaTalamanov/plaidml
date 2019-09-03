@@ -2,15 +2,18 @@
 
 #include "tile/codegen/driver.h"
 
+#include <memory>
+#include <unordered_map>
+
 #include <boost/format.hpp>
 
 #include "base/config/config.h"
 #include "base/util/any_factory_map.h"
 #include "base/util/throw.h"
-#include "pmlc/dialect/mir/transcode.h"
 #include "tile/codegen/alias.h"
 #include "tile/codegen/compile_pass.h"
 #include "tile/codegen/emitc.h"
+#include "tile/codegen/mlir_passes.h"
 
 namespace vertexai {
 namespace tile {
@@ -94,18 +97,6 @@ class ConfigsRegistry {
   std::unordered_map<std::string, std::string> registry_;
 };
 
-void ConvertToStripe(CompilerState* state) {
-  IVLOG(1, "Converting to Stripe");
-  mlir::FuncOp op = mlir::cast<mlir::FuncOp>(state->module.front());
-  *state->prog = pmlc::dialect::mir::ToStripe(op);
-  // TODO: Erase
-}
-
-void ConvertToMir(CompilerState* state) {
-  IVLOG(1, "Converting to MIR");
-  state->module.push_back(pmlc::dialect::mir::ToMir(&state->ctx, *state->prog));
-}
-
 }  // namespace
 
 void Optimize(CompilerState* state, const Passes& passes, const OptimizeOptions& options) {
@@ -124,7 +115,7 @@ void Optimize(CompilerState* state, const Passes& passes, const OptimizeOptions&
     if (!in_stripe && wants_stripe) {
       ConvertToStripe(state);
     } else if (in_stripe && !wants_stripe) {
-      ConvertToMir(state);
+      ConvertToStripeMLIR(state);
     }
     in_stripe = wants_stripe;
     compile_pass->Apply(state);

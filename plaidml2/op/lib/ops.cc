@@ -2,6 +2,11 @@
 
 #include "plaidml2/op/lib/ops.h"
 
+#include <algorithm>
+#include <set>
+#include <utility>
+#include <vector>
+
 #include <boost/format.hpp>
 
 #include "base/util/logging.h"
@@ -12,6 +17,43 @@ using namespace plaidml::edsl;  // NOLINT
 namespace plaidml {
 namespace op {
 namespace lib {
+
+// Forward declare the operations here so they can call each other
+Value abs(const Value&);
+Value all(const Value&);
+Value any(const Value&);
+Value argmax(const Value&);
+Value binary_crossentropy(const Value&);
+Value clip(const Value&);
+Value concatenate(const Value&);
+Value convolution(const Value&);
+Value cumprod(const Value&);
+Value cumsum(const Value&);
+Value dot(const Value&);
+Value elu(const Value&);
+Value expand_dims(const Value&);
+Value flip(const Value&);
+Value hard_sigmoid(const Value&);
+Value image_resize(const Value&);
+Value max(const Value&);
+Value maximum(const Value&);
+Value mean(const Value&);
+Value min(const Value&);
+Value minimum(const Value&);
+Value pool(const Value&);
+Value prod(const Value&);
+Value relu(const Value&);
+Value repeat(const Value&);
+Value sigmoid(const Value&);
+Value slice(const Value&);
+Value softmax(const Value&);
+Value spatial_padding(const Value&);
+Value square(const Value&);
+Value squeeze(const Value&);
+Value sum(const Value&);
+Value tile(const Value&);
+Value transpose(const Value&);
+Value variance(const Value&);
 
 struct AggregationAxes {
   std::vector<TensorIndex> src_idxs;
@@ -118,6 +160,8 @@ enum class GroupLayout {
   IN_K       // Group included in the output channels dimensiono
 };
 
+enum class InterpolationMode { NEAREST, BILINEAR };
+
 enum class PoolMode : char { AVG = 'A', MAX = '>', MIN = '<', SUM = '+' };
 
 enum class TensorLayout { NXC, NCX, KCX, XCK, GKCX, XGCK };
@@ -220,6 +264,16 @@ std::string to_string(GroupLayout l) {
   throw std::runtime_error("Unable to convert group layout to string due to unrecognized layout");
 }
 
+InterpolationMode interpolation_mode_from_str(const std::string& s) {
+  if (s == "nearest") {
+    return InterpolationMode::NEAREST;
+  }
+  if (s == "bilinear") {
+    return InterpolationMode::BILINEAR;
+  }
+  throw std::runtime_error(str(boost::format("Unable to parse string '%1%' as an interpolation mode") % s));
+}
+
 PoolMode pool_mode_from_str(const std::string& s) {
   if (s == "avg" || s == "average") {
     return PoolMode::AVG;
@@ -288,24 +342,23 @@ size_t nonspatial_dims(TensorLayout layout) {
   }
 }
 
-// TODO: Enable when needed
-// std::string to_string(TensorLayout m) {
-//   switch (m) {
-//    case TensorLayout::NXC:
-//     return "NXC";
-//    case TensorLayout::NCX:
-//     return "NCX";
-//    case TensorLayout::KCX:
-//     return "KCX";
-//    case TensorLayout::XCK:
-//     return "XCK";
-//    case TensorLayout::GKCX:
-//     return "GKCX";
-//    case TensorLayout::XGCK:
-//     return "XGCK";
-//   }
-//   throw std::runtime_error("Unable to convert tensor layout to string due to unrecognized layout");
-// }
+std::string to_string(TensorLayout m) {
+  switch (m) {
+    case TensorLayout::NXC:
+      return "NXC";
+    case TensorLayout::NCX:
+      return "NCX";
+    case TensorLayout::KCX:
+      return "KCX";
+    case TensorLayout::XCK:
+      return "XCK";
+    case TensorLayout::GKCX:
+      return "GKCX";
+    case TensorLayout::XGCK:
+      return "XGCK";
+  }
+  throw std::runtime_error("Unable to convert tensor layout to string due to unrecognized layout");
+}
 
 bool is_input_layout(TensorLayout layout) {  //
   return (layout == TensorLayout::NCX || layout == TensorLayout::NXC);
@@ -401,13 +454,19 @@ size_t normalize_axis(int64_t axis, size_t ndims, std::string op_name = "") {
   return axis;
 }
 
-std::pair<TensorDim, TensorDim> compute_padding_and_output_size(const TensorDim& input_size,
-                                                                const TensorDim& filter_size, int64_t stride,
-                                                                AutopadMode autopad_mode, int64_t pad_lo,
-                                                                int64_t pad_hi, int64_t dilation, int64_t data_dilation,
-                                                                bool use_ceil_for_output_shape) {
-  // Effective input and filter sizes are the sizes after dilations are accounted for. So a 4x3 filter dilated by (3, 2)
-  // has an effective filter size of 11 and 5 for its 2 spatial dims
+std::pair<TensorDim, TensorDim> compute_padding_and_output_size(  //
+    const TensorDim& input_size,                                  //
+    const TensorDim& filter_size,                                 //
+    int64_t stride,                                               //
+    AutopadMode autopad_mode,                                     //
+    int64_t pad_lo,                                               //
+    int64_t pad_hi,                                               //
+    int64_t dilation,                                             //
+    int64_t data_dilation,                                        //
+    bool use_ceil_for_output_shape) {
+  // Effective input and filter sizes are the sizes after dilations are
+  // accounted for. So a 4x3 filter dilated by (3, 2) has an effective filter
+  // size of 11 and 5 for its 2 spatial dims
 
   auto I_eff = (data_dilation * (input_size - 1)) + 1;  // Effective Input Size
   auto F_eff = (dilation * (filter_size - 1)) + 1;      // Effective Filter Size
@@ -465,6 +524,61 @@ Value abs(const Value& value) {
   return Value{O};
 }
 
+Value all(const Value& value) {
+  IVLOG(1, "all");
+  auto args = value.as_tuple();
+  if (args.size() != 3) {
+    throw std::runtime_error("all expects 3 arguments");
+  }
+  auto I = args[0].as_tensor();
+  auto axes = args[1];
+  auto keepdims = args[2].as_bool();
+
+  auto I_as_bool = select(I == 0, Tensor{0}, Tensor{1});
+  auto I_shape = I.shape();
+  if (I_shape.ndims() == 0) {
+    return Value{as_uint(I_as_bool, 8)};
+  }
+  if (axes.is_tuple() && axes.as_tuple().empty()) {
+    return Value{as_uint(I_as_bool, 8)};
+  }
+
+  AggregationAxes agg(I_shape.ndims(), axes, keepdims);
+
+  I.bind_dims(agg.src_dims);
+  auto O = TensorOutput(agg.dst_dims);
+  O(agg.dst_idxs) *= I_as_bool(agg.src_idxs);
+  return Value{as_uint(O, 8)};
+}
+
+Value any(const Value& value) {
+  IVLOG(1, "any");
+  auto args = value.as_tuple();
+  if (args.size() != 3) {
+    throw std::runtime_error("any expects 3 arguments");
+  }
+  auto I = args[0].as_tensor();
+  auto axes = args[1];
+  auto keepdims = args[2].as_bool();
+
+  auto I_as_bool = select(I == 0, Tensor{0}, Tensor{1});
+  auto I_shape = I.shape();
+  if (I_shape.ndims() == 0) {
+    return Value{as_uint(I_as_bool, 8)};
+  }
+  if (axes.is_tuple() && axes.as_tuple().empty()) {
+    return Value{as_uint(I_as_bool, 8)};
+  }
+
+  AggregationAxes agg(I_shape.ndims(), axes, keepdims);
+
+  I.bind_dims(agg.src_dims);
+  auto S = TensorOutput(agg.dst_dims);
+  S(agg.dst_idxs) += I_as_bool(agg.src_idxs);
+  auto O = select(S == 0, Tensor{0}, Tensor{1});
+  return Value{as_uint(O, 8)};
+}
+
 Value argmax(const Value& value) {
   IVLOG(1, "argmax");
   auto args = value.as_tuple();
@@ -488,8 +602,6 @@ Value argmax(const Value& value) {
   return Value{O};
 }
 
-// TODO: Handle function forward declaration in a nice style
-Value clip(const Value& value);  // binary xentropy needs to know about clip
 Value binary_crossentropy(const Value& value) {
   IVLOG(1, "binary_crossentropy")
   auto args = value.as_tuple();
@@ -740,31 +852,38 @@ Value convolution(const Value& value) {
 
   // Prepare dimension and index variables
   TensorDim N, CI, CO, G;
-  TensorDim F_CI, F_CO;  // The channel dimensions as used by the filters, adjusted for group layout
+  // The channel dimensions as used by the filters, adjusted for group layout
+  TensorDim F_CI, F_CO;
   TensorIndex n("n");
   TensorIndex ci("ci");
   TensorIndex co("co");
   TensorIndex g("g");
-  std::vector<TensorDim> X(spatial_rank);  // The spatial dimensions of I
-  std::vector<TensorIndex> x;              // The spatial indexes of I
+  // The spatial dimensions of I
+  std::vector<TensorDim> X(spatial_rank);
+  // The spatial indexes of I
+  std::vector<TensorIndex> x;
   for (size_t i = 0; i < spatial_rank; ++i) {
     x.emplace_back(TensorIndex(str(boost::format("x%1%") % i)));
   }
-  std::vector<TensorDim> Y(spatial_rank);  // The spatial dimensions of O; nearly unused
-  std::vector<TensorDim> K(spatial_rank);  // The spatial dimensions of F
-  std::vector<TensorIndex> k;              // The spatial indexs of F
+  // The spatial dimensions of O; nearly unused
+  std::vector<TensorDim> Y(spatial_rank);
+  // The spatial dimensions of F
+  std::vector<TensorDim> K(spatial_rank);
+  // The spatial indexs of F
+  std::vector<TensorIndex> k;
   for (size_t i = 0; i < spatial_rank; ++i) {
     k.emplace_back(TensorIndex(str(boost::format("k%1%") % i)));
   }
   std::vector<TensorDim> I_dims;
   std::vector<TensorIndex> I_idxs;
   std::vector<TensorDim> F_dims;
-  std::vector<TensorDim>
-      F_explicit_dims;  // this ensures that the inferred filter shape matches filter_shape if the latter is passed in
+  // this ensures that the inferred filter shape matches filter_shape if the latter is passed in
+  std::vector<TensorDim> F_explicit_dims;
   std::vector<TensorIndex> F_idxs;
   std::vector<TensorDim> O_dims;
   std::vector<TensorIndex> O_idxs;
-  TensorDim G_explicit(groups);  // G may be explicit or automatically set, based on autogroup_mode
+  // G may be explicit or automatically set, based on autogroup_mode
+  TensorDim G_explicit(groups);
   switch (autogroup_mode) {
     case AutogroupMode::EXPLICIT:
     case AutogroupMode::UNGROUPED:
@@ -794,9 +913,10 @@ Value convolution(const Value& value) {
       throw std::runtime_error("Unrecognized AutogroupMode");
   }
 
-  // Set up dimensions of the inputs first so they can be bound
-  // Group layout affects the size of filter dimensions; we pass through the dims that don't need to be adjusted here,
-  // and we will calculate those dimensions that will be adjusted later (after some more dims are bound).
+  // Set up dimensions of the inputs first so they can be bound Group layout
+  // affects the size of filter dimensions; we pass through the dims that don't
+  // need to be adjusted here, and we will calculate those dimensions that will
+  // be adjusted later (after some more dims are bound).
   // TODO: This needs more thorough test converage
   switch (group_layout) {
     case GroupLayout::NONE:
@@ -887,8 +1007,8 @@ Value convolution(const Value& value) {
 
   // The output data dims
   if (deriv_mode != ConvDerivMode::NONE) {
-    // This assumes we infer the output layout from the input layout. So if we change that, the output data dims section
-    // will need to be adapted.
+    // This assumes we infer the output layout from the input layout. So if we
+    // change that, the output data dims section will need to be adapted.
     switch (input_layout) {
       case TensorLayout::NCX:
         O_dims.push_back(N);
@@ -944,8 +1064,8 @@ Value convolution(const Value& value) {
   // Now set up the dimensions of the result to be returned
   switch (deriv_mode) {
     case ConvDerivMode::NONE:
-      // This assumes we infer the output layout from the input layout. So if we change that, the below switch will need
-      // to be adapted.
+      // This assumes we infer the output layout from the input layout. So if we
+      // change that, the below switch will need to be adapted.
       switch (input_layout) {
         case TensorLayout::NCX:
           O_dims.push_back(N);
@@ -1104,8 +1224,8 @@ Value convolution(const Value& value) {
   }
 
   // Output data indexes
-  // This assumes we infer the output layout from the input layout. So if we change that, the below switch will need to
-  // be adapted.
+  // This assumes we infer the output layout from the input layout. So if we
+  // change that, the below switch will need to be adapted.
   switch (input_layout) {
     case TensorLayout::NCX:
       O_idxs.push_back(n);
@@ -1136,13 +1256,13 @@ Value convolution(const Value& value) {
   // Return the contraction
   switch (deriv_mode) {
     case ConvDerivMode::NONE:
-      O(O_idxs) += (I(I_idxs) * F(F_idxs));
+      O(O_idxs) += I(I_idxs) * F(F_idxs);
       return Value{O};
     case ConvDerivMode::DATA:
-      I(I_idxs) += (O(O_idxs) * F(F_idxs));
+      I(I_idxs) += O(O_idxs) * F(F_idxs);
       return Value{I};
     case ConvDerivMode::FILTER:
-      F(F_idxs) += (I(I_idxs) * O(O_idxs));
+      F(F_idxs) += I(I_idxs) * O(O_idxs);
       return Value{F};
     default:
       throw std::runtime_error("Unrecognized deriv_mode");
@@ -1377,6 +1497,130 @@ Value hard_sigmoid(const Value& value) {
   return Value{O};
 }
 
+Value image_resize(const Value& value) {
+  // Resize a 2D image's spatial dimensions, each by a positive integer factor
+  IVLOG(1, "image_resize");
+  auto args = value.as_tuple();
+  if (args.size() != 4) {
+    throw std::runtime_error("image_resize expects 4 arguments");
+  }
+  auto raw_I = args[0];
+  auto factors = args[1].as_int_tuple();
+  auto interp = interpolation_mode_from_str(args[2].as_str());
+  auto layout = tensor_layout_from_str(args[3].as_str());
+
+  for (const auto& scale_factor : factors) {
+    if (scale_factor <= 0) {
+      throw std::runtime_error(
+          str(boost::format("All scaling factors in image_resize must be positive (received %1%)") % scale_factor));
+    }
+  }
+
+  // The total number of spatial dimensions and how many non-spatial dimensions are before & after the spatial dims
+  size_t rank;  // an error if this isn't 2
+  size_t pre_axes;
+  auto I = raw_I.as_tensor();
+  auto ndims = I.shape().ndims();
+  switch (layout) {
+    case TensorLayout::NCX:
+      rank = ndims - 2;
+      pre_axes = 2;
+      break;
+    case TensorLayout::NXC:
+      rank = ndims - 2;
+      pre_axes = 1;
+      break;
+    default:
+      throw std::runtime_error(
+          str(boost::format("Unable to apply image_resize to a tensor with layout '%1'") % to_string(layout)));
+  }
+  if (rank != 2) {
+    throw std::runtime_error(str(boost::format("Expected 2 spatial dims for resize_images, received %1%") % rank));
+  }
+  if (factors.size() != 2) {
+    throw std::runtime_error(
+        str(boost::format("Cannot resize a 2D image using %2% spatial scaling factors") % rank % factors.size()));
+  }
+
+  Tensor O;
+  switch (interp) {
+    case InterpolationMode::NEAREST: {
+      std::vector<Value> repeat_inputs{raw_I, Value{factors[0]}, Value{pre_axes}};
+      auto R = repeat(Value{repeat_inputs});
+      std::vector<Value> repeat_inputs2{R, Value{factors[1]}, Value{pre_axes + 1}};
+      O = repeat(Value{repeat_inputs2}).as_tensor();
+    } break;
+    case InterpolationMode::BILINEAR: {
+      // This aligns the corners to 0 and <factor> * (<dim> - 1), and assumes zero-padding, which is a bit weird. But
+      // it's easy to code and for ML the weirdness probably doesn't particularly matter.
+      // Could likely eke out a bit more perf by precomputing K instead of doing it at runtime on device.
+
+      // Setup K
+      auto HCoeff = Tensor{1. / factors[0]};
+      auto WCoeff = Tensor{1. / factors[1]};
+      TensorDim HFactor{factors[0]};
+      TensorDim WFactor{factors[1]};
+      auto HCoeffVec = TensorOutput(HFactor);
+      auto WCoeffVec = TensorOutput(WFactor);
+      HCoeffVec(TensorIndex{"y"}) = HCoeff();
+      WCoeffVec(TensorIndex{"x"}) = WCoeff();
+      auto HK_dim = 2 * HFactor - 1;
+      auto WK_dim = 2 * WFactor - 1;
+      auto HK = TensorOutput(HK_dim);
+      auto WK = TensorOutput(WK_dim);
+      {
+        // Scoped for safe index name reuse
+        TensorIndex j{"j"};
+        TensorIndex i{"i"};
+        TensorIndex y{"y"};
+        TensorIndex x{"x"};
+        if (j < HFactor) {
+          HK(y) += HCoeffVec(j + y - HFactor + 1);
+        }
+        if (i < WFactor) {
+          WK(x) += WCoeffVec(i + x - WFactor + 1);
+        }
+      }
+      auto K = TensorOutput(HK_dim, WK_dim);
+      {
+        // Scoped for safe index name reuse
+        TensorIndex x{"x"};
+        TensorIndex y{"y"};
+        K(y, x) = HK(y) * WK(x);
+      }
+
+      // Resize
+      std::vector<TensorDim> I_dims(ndims);
+      std::vector<TensorIndex> I_idxs(ndims);
+      I.bind_dims(I_dims);
+      std::vector<TensorDim> O_dims;
+      std::vector<TensorIndex> O_idxs;
+      for (size_t ax = 0; ax < pre_axes; ++ax) {
+        O_dims.push_back(I_dims[ax]);
+        O_idxs.push_back(I_idxs[ax]);
+      }
+      {
+        // Scoped for safe index name reuse
+        TensorIndex i{"i"};
+        TensorIndex j{"j"};
+        O_dims.push_back(HFactor * I_dims[pre_axes]);
+        O_dims.push_back(WFactor * I_dims[pre_axes + 1]);
+        O_idxs.push_back(HFactor * I_idxs[pre_axes] + j - HFactor + 1);
+        O_idxs.push_back(WFactor * I_idxs[pre_axes + 1] + i - WFactor + 1);
+        for (size_t ax = pre_axes + 2; ax < ndims; ++ax) {
+          O_dims.push_back(I_dims[ax]);
+          O_idxs.push_back(I_idxs[ax]);
+        }
+        O = TensorOutput(O_dims);
+        O(O_idxs) += I(I_idxs) * K(j, i);
+      }
+    } break;
+    default:
+      throw std::runtime_error("Unrecognized InterpolationMode in image_resize");
+  }
+  return Value{O};
+}
+
 Value max(const Value& value) {
   IVLOG(1, "max");
   auto args = value.as_tuple();
@@ -1391,6 +1635,18 @@ Value max(const Value& value) {
   I.bind_dims(agg.src_dims);
   auto O = TensorOutput(agg.dst_dims);
   O(agg.dst_idxs) >= I(agg.src_idxs);
+  return Value{O};
+}
+
+Value maximum(const Value& value) {
+  IVLOG(1, "maximum");
+  auto args = value.as_tuple();
+  if (args.size() != 2) {
+    throw std::runtime_error("maximum expects 2 arguments");
+  }
+  auto X = args[0].as_tensor();
+  auto Y = args[1].as_tensor();
+  auto O = select(X < Y, Y, X);
   return Value{O};
 }
 
@@ -1448,6 +1704,18 @@ Value min(const Value& value) {
   return Value{O};
 }
 
+Value minimum(const Value& value) {
+  IVLOG(1, "minimum");
+  auto args = value.as_tuple();
+  if (args.size() != 2) {
+    throw std::runtime_error("minimum expects 2 arguments");
+  }
+  auto X = args[0].as_tensor();
+  auto Y = args[1].as_tensor();
+  auto O = select(X < Y, X, Y);
+  return Value{O};
+}
+
 Value prod(const Value& value) {
   IVLOG(1, "prod");
   auto args = value.as_tuple();
@@ -1491,11 +1759,14 @@ Value pool(const Value& value) {
   //    6. Layout (i.e. Channel Order) (minimally NXC v NCX)
   //    7. Include Padding in Avg Computation (bool)
   //    8. Ceil Mode (i.e. as in ONNX)
-  // n.b. We determine the number of spatial dimensions from the Pool Size and confirm it is consistent with other
-  // parameters that imply a spatial dimension size, specifically strides. We do also check this against the input
-  // tensor shape and the manual padding, but these are less strict: manual padding may omit some padding values
-  // (which are then assumed to be 0), and the input tensor shape may have multiple channel dimensions (i.e. for
-  // cases like tensors going into or coming out of grouped convolutions).
+  //
+  // N.B. We determine the number of spatial dimensions from the Pool Size and
+  // confirm it is consistent with other parameters that imply a spatial
+  // dimension size, specifically strides. We do also check this against the
+  // input tensor shape and the manual padding, but these are less strict:
+  // manual padding may omit some padding values (which are then assumed to be
+  // 0), and the input tensor shape may have multiple channel dimensions (i.e.
+  // for cases like tensors going into or coming out of grouped convolutions).
 
   // Read arguments
   auto args = value.as_tuple();
@@ -1608,9 +1879,10 @@ Value pool(const Value& value) {
       auto One = Tensor{1};
       auto Ones = TensorOutput(I_dims);
       auto Count = TensorOutput(O_dims);
-      // Note: O_idxs is used in both cases b/c both need indexes of the form x0, x1, ...
-      // However, they do not represent the same index values (and notably do not interate
-      // over the same size of dimensions as I_dims != O_dims)
+      // Note: O_idxs is used in both cases b/c both need indexes of the form
+      // x0, x1, ... However, they do not represent the same index values (and
+      // notably do not interate over the same size of dimensions as I_dims !=
+      // O_dims)
       Ones(O_idxs) = One(std::vector<TensorIndex>());
       Count(O_idxs) += Ones(I_idxs);
       return Value{O / Count};
@@ -1647,7 +1919,8 @@ Value relu(const Value& value) {
 Value repeat(const Value& value) {
   IVLOG(1, "repeat");
   // This is numpy-style `repeat`; Keras calls it `repeat_elements`
-  // This is more limited than in numpy (both repeats & axis required, both must be ints)
+  // This is more limited than in numpy (both repeats & axis required, both must
+  // be ints)
 
   // Read arguments
   auto args = value.as_tuple();
@@ -2254,7 +2527,8 @@ Value transpose(const Value& value) {
 }
 
 Value variance(const Value& value) {
-  // This computes the *uncorrected* sample variance (i.e. denominator = n rather than = n-1) to match tensorflow
+  // This computes the *uncorrected* sample variance (i.e. denominator = n
+  // rather than = n-1) to match tensorflow
   IVLOG(1, "variance");
   auto args = value.as_tuple();
   if (args.size() != 3) {
@@ -2298,6 +2572,8 @@ Value variance(const Value& value) {
 void RegisterOps() {
   auto registry = OperationRegistry::Instance();
   registry->Register("abs", abs);
+  registry->Register("all", all);
+  registry->Register("any", any);
   registry->Register("argmax", argmax);
   registry->Register("binary_crossentropy", binary_crossentropy);
   registry->Register("clip", clip);
@@ -2310,9 +2586,12 @@ void RegisterOps() {
   registry->Register("expand_dims", expand_dims);
   registry->Register("flip", flip);
   registry->Register("hard_sigmoid", hard_sigmoid);
+  registry->Register("image_resize", image_resize);
   registry->Register("max", max);
+  registry->Register("maximum", maximum);
   registry->Register("mean", mean);
   registry->Register("min", min);
+  registry->Register("minimum", minimum);
   registry->Register("pool", pool);
   registry->Register("prod", prod);
   registry->Register("relu", relu);
